@@ -470,16 +470,17 @@ async fn enumerate_subdomains(
     subdomains.insert(domain.to_string());
 
     // Create DNS resolver for additional subdomain discovery
-    let resolver = if let Ok(r) = trust_dns_resolver::TokioAsyncResolver::tokio(
-        trust_dns_resolver::config::ResolverConfig::default(),
-        trust_dns_resolver::config::ResolverOpts::default(),
-    ) {
-        Some(r)
-    } else {
-        if verbose {
-            println!("Failed to create DNS resolver. DNS-based discovery will be limited.");
+    let resolver = match trust_dns_resolver::TokioAsyncResolver::tokio_from_system_conf() {
+        Ok(r) => Some(r),
+        Err(e) => {
+            if verbose {
+                println!(
+                    "Failed to create DNS resolver: {}. DNS-based discovery will be limited.",
+                    e
+                );
+            }
+            None
         }
-        None
     };
 
     let total_subdomains = common_subdomains.len();
@@ -500,14 +501,21 @@ async fn enumerate_subdomains(
         let mut dns_resolved = false;
 
         if let Some(ref resolver) = resolver {
-            if let Ok(response) = resolver.lookup_ip(full_subdomain.clone()).await {
-                if response.iter().next().is_some() {
-                    // DNS resolution succeeded, subdomain exists
-                    subdomains.insert(full_subdomain.clone());
-                    dns_resolved = true;
+            match resolver.lookup_ip(full_subdomain.clone()).await {
+                Ok(response) => {
+                    if !response.iter().next().is_none() {
+                        // DNS resolution succeeded, subdomain exists
+                        subdomains.insert(full_subdomain.clone());
+                        dns_resolved = true;
 
+                        if verbose {
+                            println!("Found subdomain via DNS: {}", full_subdomain);
+                        }
+                    }
+                }
+                Err(e) => {
                     if verbose {
-                        println!("Found subdomain via DNS: {}", full_subdomain);
+                        println!("Error checking DNS: {}", e);
                     }
                 }
             }
@@ -610,16 +618,19 @@ async fn enumerate_subdomains(
 
         // First find name servers
         let ns_lookup = format!("ns1.{}", domain);
-        if let Ok(_) = resolver.lookup_ip(ns_lookup.clone()).await {
-            // Attempt zone transfer - this is a very simplified approach
-            // In a real implementation, we would query SOA records to find authoritative name servers
-            // and then attempt an AXFR request to each one
-            if verbose {
-                println!("Found name server ns1.{}, but zone transfer is not implemented in this version", domain);
+        match resolver.lookup_ip(ns_lookup.clone()).await {
+            Ok(_) => {
+                // Attempt zone transfer - this is a very simplified approach
+                // In a real implementation, we would query SOA records to find authoritative name servers
+                // and then attempt an AXFR request to each one
+                if verbose {
+                    println!("Found name server ns1.{}, but zone transfer is not implemented in this version", domain);
+                }
             }
-        } else {
-            if verbose {
-                println!("No ns1 name server found for {}", domain);
+            Err(e) => {
+                if verbose {
+                    println!("No ns1 name server found for {}", domain);
+                }
             }
         }
     }
@@ -654,11 +665,18 @@ async fn enumerate_subdomains(
     for target in additional_targets {
         // Only try DNS resolution for these to speed things up
         if let Some(ref resolver) = resolver {
-            if let Ok(response) = resolver.lookup_ip(target.clone()).await {
-                if response.iter().next().is_some() {
-                    subdomains.insert(target.clone());
+            match resolver.lookup_ip(target.clone()).await {
+                Ok(response) => {
+                    if !response.iter().next().is_none() {
+                        subdomains.insert(target.clone());
+                        if verbose {
+                            println!("Found additional subdomain: {}", target);
+                        }
+                    }
+                }
+                Err(e) => {
                     if verbose {
-                        println!("Found additional subdomain: {}", target);
+                        println!("Error checking DNS: {}", e);
                     }
                 }
             }
