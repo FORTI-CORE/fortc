@@ -378,11 +378,11 @@ async fn check_insecure_cookies(
         FortiCoreError::NetworkError(format!("Failed to connect to {}: {}", url, e))
     })?;
 
-    // Get cookies from the Set-Cookie header
-    let headers = resp.headers();
+    // Clone headers to avoid issues with borrowing
+    let headers = resp.headers().clone();
     let mut insecure_cookies = Vec::new();
 
-    if let Some(cookie_headers) = headers.get_all("Set-Cookie").iter().peekable().peek() {
+    if let Some(_cookie_headers) = headers.get_all("Set-Cookie").iter().peekable().peek() {
         for cookie_header in headers.get_all("Set-Cookie") {
             if let Ok(cookie_str) = cookie_header.to_str() {
                 // Extract cookie name
@@ -1087,7 +1087,9 @@ async fn check_jwt_vulnerabilities(
         FortiCoreError::NetworkError(format!("Failed to connect to {}: {}", base_url, e))
     })?;
 
-    let headers = resp.headers();
+    // Clone the headers before consuming the response body
+    let headers = resp.headers().clone();
+
     let body = resp
         .text()
         .await
