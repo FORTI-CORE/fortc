@@ -18,6 +18,9 @@ pub enum FortiCoreError {
     #[error("Configuration error: {0}")]
     ConfigError(String),
 
+    #[error("Input error: {0}")]
+    InputError(String),
+
     #[error("IO error: {0}")]
     IoError(#[from] io::Error),
 

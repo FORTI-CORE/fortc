@@ -184,7 +184,15 @@ async fn main() {
                 default_path
             });
 
-            match scanners::run_scan(target, scan_type, output_path.as_deref(), cli.verbose).await {
+            match scanners::run_scan(
+                target,
+                scan_type,
+                output_path.as_deref(),
+                cli.verbose,
+                *scan_subdomains,
+            )
+            .await
+            {
                 Ok(_) => {
                     if let Some(path) = &output_path {
                         println!(

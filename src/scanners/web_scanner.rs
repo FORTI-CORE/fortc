@@ -11,7 +11,12 @@ use tokio::time::sleep;
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use trust_dns_resolver::Resolver;
 
-pub async fn scan(target: &str, output_path: Option<&Path>, verbose: bool) -> FortiCoreResult<()> {
+pub async fn scan(
+    target: &str,
+    output_path: Option<&Path>,
+    verbose: bool,
+    scan_subdomains: bool,
+) -> FortiCoreResult<()> {
     if verbose {
         println!("Starting web scan on target: {}", target);
     }
@@ -26,16 +31,23 @@ pub async fn scan(target: &str, output_path: Option<&Path>, verbose: bool) -> Fo
     // List to store all vulnerabilities
     let mut all_vulnerabilities = Vec::new();
 
-    // Step 1: Perform subdomain enumeration
-    if verbose {
-        println!("Enumerating subdomains for: {}", domain);
-    }
-    let subdomains = enumerate_subdomains(&client, &domain, verbose).await?;
+    // Step 1: Perform subdomain enumeration if enabled
+    let subdomains = if scan_subdomains {
+        if verbose {
+            println!("Enumerating subdomains for: {}", domain);
+        }
+        enumerate_subdomains(&client, &domain, verbose).await?
+    } else {
+        if verbose {
+            println!("Subdomain scanning is disabled");
+        }
+        HashSet::new()
+    };
 
-    // If no subdomains found, just scan the main domain
+    // If no subdomains found or scanning is disabled, just scan the main domain
     if subdomains.is_empty() {
         if verbose {
-            println!("No subdomains found. Scanning only the main domain.");
+            println!("Scanning only the main domain");
         }
 
         let vulnerabilities = scan_single_target(&client, &target_url, verbose).await?;
