@@ -8,8 +8,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::time::Duration;
 use tokio::time::sleep;
-use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
-use trust_dns_resolver::Resolver;
+use trust_dns_resolver::TokioAsyncResolver;
 
 pub async fn scan(
     target: &str,
@@ -471,24 +470,20 @@ async fn enumerate_subdomains(
     subdomains.insert(domain.to_string());
 
     // Create DNS resolver for additional subdomain discovery
-    let resolver = match Resolver::from_system_conf() {
+    // Use TokioAsyncResolver which works with the existing runtime
+    let resolver = match trust_dns_resolver::TokioAsyncResolver::tokio(
+        trust_dns_resolver::config::ResolverConfig::default(),
+        trust_dns_resolver::config::ResolverOpts::default(),
+    ) {
         Ok(r) => Some(r),
         Err(e) => {
             if verbose {
                 println!(
-                    "Failed to create DNS resolver from system config: {}. Trying default config.",
+                    "Failed to create DNS resolver: {}. DNS-based discovery will be limited.",
                     e
                 );
             }
-            match Resolver::new(ResolverConfig::default(), ResolverOpts::default()) {
-                Ok(r) => Some(r),
-                Err(e) => {
-                    if verbose {
-                        println!("Failed to create DNS resolver with default config: {}. DNS-based discovery will be limited.", e);
-                    }
-                    None
-                }
-            }
+            None
         }
     };
 
@@ -510,7 +505,7 @@ async fn enumerate_subdomains(
         let mut dns_resolved = false;
 
         if let Some(ref resolver) = resolver {
-            match resolver.lookup_ip(&full_subdomain) {
+            match resolver.lookup_ip(full_subdomain.clone()).await {
                 Ok(response) => {
                     if !response.iter().next().is_none() {
                         // DNS resolution succeeded, subdomain exists
@@ -624,7 +619,8 @@ async fn enumerate_subdomains(
         }
 
         // First find name servers
-        match resolver.lookup_ip(&format!("ns1.{}", domain)) {
+        let ns_lookup = format!("ns1.{}", domain);
+        match resolver.lookup_ip(ns_lookup.clone()).await {
             Ok(_) => {
                 // Attempt zone transfer - this is a very simplified approach
                 // In a real implementation, we would query SOA records to find authoritative name servers
@@ -671,7 +667,7 @@ async fn enumerate_subdomains(
     for target in additional_targets {
         // Only try DNS resolution for these to speed things up
         if let Some(ref resolver) = resolver {
-            match resolver.lookup_ip(&target) {
+            match resolver.lookup_ip(target.clone()).await {
                 Ok(response) => {
                     if !response.iter().next().is_none() {
                         subdomains.insert(target.clone());
