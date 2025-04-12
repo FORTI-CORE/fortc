@@ -378,20 +378,35 @@ async fn check_insecure_cookies(
         FortiCoreError::NetworkError(format!("Failed to connect to {}: {}", url, e))
     })?;
 
-    let cookies = resp.cookies();
+    // Get cookies from the Set-Cookie header
+    let headers = resp.headers();
     let mut insecure_cookies = Vec::new();
 
-    for cookie in cookies {
-        let name = cookie.name().to_string();
-        let secure = cookie.secure();
-        let http_only = cookie.http_only().unwrap_or(false);
+    if let Some(cookie_headers) = headers.get_all("Set-Cookie").iter().peekable().peek() {
+        for cookie_header in headers.get_all("Set-Cookie") {
+            if let Ok(cookie_str) = cookie_header.to_str() {
+                // Extract cookie name
+                let name = cookie_str
+                    .split(';')
+                    .next()
+                    .and_then(|name_value| name_value.split('=').next())
+                    .unwrap_or("unknown")
+                    .to_string();
 
-        if !secure || !http_only {
-            insecure_cookies.push(json!({
-                "name": name,
-                "secure": secure,
-                "httpOnly": http_only
-            }));
+                // Check if Secure flag is set
+                let secure = cookie_str.to_lowercase().contains("secure");
+
+                // Check if HttpOnly flag is set
+                let http_only = cookie_str.to_lowercase().contains("httponly");
+
+                if !secure || !http_only {
+                    insecure_cookies.push(json!({
+                        "name": name,
+                        "secure": secure,
+                        "httpOnly": http_only
+                    }));
+                }
+            }
         }
     }
 
@@ -435,7 +450,7 @@ async fn check_xss_enhanced(
 
     // Look for forms and their target URLs
     let form_regex = Regex::new(r#"(?i)<form[^>]*action=["']([^"']*)["']"#).unwrap();
-    let param_regex = Regex::new(r"(?i)([^?&=]+)=([^&]*)").unwrap();
+    let _param_regex = Regex::new(r"(?i)([^?&=]+)=([^&]*)").unwrap();
 
     // Also check for URL parameters in the original URL
     if base_url.contains('?') {
@@ -888,7 +903,7 @@ async fn check_lfi(client: &Client, base_url: &str) -> FortiCoreResult<Option<Vu
                     ))
                 })?;
 
-                let status = resp.status().as_u16();
+                let _status = resp.status().as_u16();
                 let body = resp.text().await.map_err(|e| {
                     FortiCoreError::NetworkError(format!("Failed to read response: {}", e))
                 })?;
@@ -1072,46 +1087,72 @@ async fn check_jwt_vulnerabilities(
         FortiCoreError::NetworkError(format!("Failed to connect to {}: {}", base_url, e))
     })?;
 
-    let cookies = resp.cookies();
+    let headers = resp.headers();
     let body = resp
         .text()
         .await
         .map_err(|e| FortiCoreError::NetworkError(format!("Failed to read response: {}", e)))?;
 
     // Look for JWT tokens in cookies
-    for cookie in cookies {
-        let value = cookie.value();
+    if let Some(_) = headers.get_all("Set-Cookie").iter().peekable().peek() {
+        for cookie_header in headers.get_all("Set-Cookie") {
+            if let Ok(cookie_str) = cookie_header.to_str() {
+                // Extract cookie value
+                let value = cookie_str
+                    .split(';')
+                    .next()
+                    .and_then(|name_value| {
+                        let parts: Vec<&str> = name_value.split('=').collect();
+                        if parts.len() >= 2 {
+                            Some(parts[1..].join("=")) // Handle values with = in them
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
 
-        // JWT tokens typically have 3 parts separated by dots
-        if value.matches('.').count() == 2 && value.starts_with("eyJ") {
-            // This looks like a JWT token
+                // Extract cookie name
+                let name = cookie_str
+                    .split(';')
+                    .next()
+                    .and_then(|name_value| name_value.split('=').next())
+                    .unwrap_or("unknown")
+                    .to_string();
 
-            // Check for the "none" algorithm vulnerability
-            let parts: Vec<&str> = value.split('.').collect();
-            if parts.len() == 3 {
-                let header_base64 = parts[0];
+                // JWT tokens typically have 3 parts separated by dots
+                if value.matches('.').count() == 2 && value.starts_with("eyJ") {
+                    // This looks like a JWT token
 
-                // Attempt to decode the header (simplified approach)
-                let padding_needed = (4 - header_base64.len() % 4) % 4;
-                let padded_header = format!("{}{}", header_base64, "=".repeat(padding_needed));
+                    // Check for the "none" algorithm vulnerability
+                    let parts: Vec<&str> = value.split('.').collect();
+                    if parts.len() == 3 {
+                        let header_base64 = parts[0];
 
-                if padded_header.contains("alg\":\"none") || padded_header.contains("alg\":\"HS256")
-                {
-                    let vuln = Vulnerability {
-                        id: "WEB-012".to_string(),
-                        name: "Potentially Insecure JWT Implementation".to_string(),
-                        description: "The site uses JWT tokens which might be vulnerable to algorithm confusion attacks".to_string(),
-                        severity: Severity::Medium,
-                        location: base_url.to_string(),
-                        details: json!({
-                            "cookie_name": cookie.name(),
-                            "jwt_header": header_base64,
-                            "recommendation": "Use strong signing algorithms (RS256) and validate the 'alg' header"
-                        }),
-                        exploitable: true,
-                    };
+                        // Attempt to decode the header (simplified approach)
+                        let padding_needed = (4 - header_base64.len() % 4) % 4;
+                        let padded_header =
+                            format!("{}{}", header_base64, "=".repeat(padding_needed));
 
-                    return Ok(Some(vuln));
+                        if padded_header.contains("alg\":\"none")
+                            || padded_header.contains("alg\":\"HS256")
+                        {
+                            let vuln = Vulnerability {
+                                id: "WEB-012".to_string(),
+                                name: "Potentially Insecure JWT Implementation".to_string(),
+                                description: "The site uses JWT tokens which might be vulnerable to algorithm confusion attacks".to_string(),
+                                severity: Severity::Medium,
+                                location: base_url.to_string(),
+                                details: json!({
+                                    "cookie_name": name,
+                                    "jwt_header": header_base64,
+                                    "recommendation": "Use strong signing algorithms (RS256) and validate the 'alg' header"
+                                }),
+                                exploitable: true,
+                            };
+
+                            return Ok(Some(vuln));
+                        }
+                    }
                 }
             }
         }
