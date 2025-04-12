@@ -38,6 +38,10 @@ enum Commands {
         /// Output file for scan results
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Enable subdomain discovery and scanning
+        #[arg(long, default_value = "false")]
+        scan_subdomains: bool,
     },
     /// Attempt to exploit found vulnerabilities
     Exploit {
@@ -88,7 +92,7 @@ fn print_banner() {
     "#
         .bright_red()
     );
-    println!("{}", "Automated Penetration Testing Tool".bright_blue());
+    println!("{}", "Penetration Testing Tool".bright_blue());
     println!("{}", "Version 0.1.0".bright_yellow());
     println!();
 }
@@ -153,6 +157,7 @@ async fn main() {
             target,
             scan_type,
             output,
+            scan_subdomains,
         }) => {
             println!(
                 "{} {} with scan type: {:?}",

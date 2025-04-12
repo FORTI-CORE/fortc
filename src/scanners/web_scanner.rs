@@ -4,149 +4,683 @@ use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::Client;
 use serde_json::json;
+use std::collections::HashSet;
 use std::path::Path;
+use std::time::Duration;
+use tokio::time::sleep;
+use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
+use trust_dns_resolver::Resolver;
 
 pub async fn scan(target: &str, output_path: Option<&Path>, verbose: bool) -> FortiCoreResult<()> {
     if verbose {
         println!("Starting web scan on target: {}", target);
     }
 
+    // Normalize the target URL for subdomain enumeration
     let target_url = normalize_url(target);
+    let domain = extract_domain(&target_url)?;
+
+    // Create HTTP client
     let client = create_client()?;
 
-    let mut vulnerabilities = Vec::new();
+    // List to store all vulnerabilities
+    let mut all_vulnerabilities = Vec::new();
 
-    // Basic information gathering
+    // Step 1: Perform subdomain enumeration
     if verbose {
-        println!("Gathering basic information about the web server...");
+        println!("Enumerating subdomains for: {}", domain);
     }
+    let subdomains = enumerate_subdomains(&client, &domain, verbose).await?;
 
-    // Check for HTTP response headers
-    let headers = check_headers(&client, &target_url).await?;
-    if let Some(vuln) = headers {
-        vulnerabilities.push(vuln);
-    }
+    // If no subdomains found, just scan the main domain
+    if subdomains.is_empty() {
+        if verbose {
+            println!("No subdomains found. Scanning only the main domain.");
+        }
 
-    // Check for robots.txt
-    if verbose {
-        println!("Checking for robots.txt...");
-    }
-    let robots = check_robots_txt(&client, &target_url).await?;
-    if let Some(vuln) = robots {
-        vulnerabilities.push(vuln);
-    }
+        let vulnerabilities = scan_single_target(&client, &target_url, verbose).await?;
+        all_vulnerabilities.extend(vulnerabilities);
+    } else {
+        // Scan main domain first
+        if verbose {
+            println!("Scanning main domain: {}", target_url);
+        }
+        let vulnerabilities = scan_single_target(&client, &target_url, verbose).await?;
+        all_vulnerabilities.extend(vulnerabilities);
 
-    // Check for server version
-    if verbose {
-        println!("Checking for server version disclosure...");
-    }
-    let server_version = check_server_version_disclosure(&client, &target_url).await?;
-    if let Some(vuln) = server_version {
-        vulnerabilities.push(vuln);
-    }
+        // Scan each subdomain
+        for subdomain in &subdomains {
+            let subdomain_url = format!("https://{}", subdomain);
 
-    // Check for common vulnerabilities
-    if verbose {
-        println!("Checking for common web vulnerabilities...");
-    }
+            if verbose {
+                println!("Scanning subdomain: {}", subdomain_url);
+            }
 
-    // CORS misconfiguration
-    let cors = check_cors(&client, &target_url).await?;
-    if let Some(vuln) = cors {
-        vulnerabilities.push(vuln);
-    }
+            // Sleep briefly between scans to avoid overwhelming the server
+            sleep(Duration::from_millis(500)).await;
 
-    // Check for insecure cookies
-    if verbose {
-        println!("Checking for insecure cookies...");
-    }
-    let cookies = check_insecure_cookies(&client, &target_url).await?;
-    if let Some(vuln) = cookies {
-        vulnerabilities.push(vuln);
-    }
+            match scan_single_target(&client, &subdomain_url, verbose).await {
+                Ok(vulnerabilities) => {
+                    all_vulnerabilities.extend(vulnerabilities);
+                }
+                Err(e) => {
+                    if verbose {
+                        println!("Error scanning {}: {}", subdomain_url, e);
+                    }
 
-    // XSS reflection test (enhanced)
-    if verbose {
-        println!("Checking for XSS vulnerabilities...");
-    }
-    let xss = check_xss_enhanced(&client, &target_url).await?;
-    for vuln in xss {
-        vulnerabilities.push(vuln);
-    }
+                    // Try with HTTP if HTTPS fails
+                    let http_url = format!("http://{}", subdomain);
+                    if verbose {
+                        println!("Retrying with HTTP: {}", http_url);
+                    }
 
-    // SQL Injection test (enhanced)
-    if verbose {
-        println!("Checking for SQL injection vulnerabilities...");
-    }
-    let sqli = check_sql_injection_enhanced(&client, &target_url).await?;
-    if let Some(vuln) = sqli {
-        vulnerabilities.push(vuln);
-    }
-
-    // Directory traversal test
-    if verbose {
-        println!("Checking for directory traversal vulnerabilities...");
-    }
-    let dir_traversal = check_directory_traversal(&client, &target_url).await?;
-    if let Some(vuln) = dir_traversal {
-        vulnerabilities.push(vuln);
-    }
-
-    // Local file inclusion (LFI) test
-    if verbose {
-        println!("Checking for local file inclusion vulnerabilities...");
-    }
-    let lfi = check_lfi(&client, &target_url).await?;
-    if let Some(vuln) = lfi {
-        vulnerabilities.push(vuln);
-    }
-
-    // Open redirect test
-    if verbose {
-        println!("Checking for open redirect vulnerabilities...");
-    }
-    let open_redirect = check_open_redirect(&client, &target_url).await?;
-    if let Some(vuln) = open_redirect {
-        vulnerabilities.push(vuln);
-    }
-
-    // JWT vulnerability check
-    if verbose {
-        println!("Checking for JWT token vulnerabilities...");
-    }
-    let jwt_vuln = check_jwt_vulnerabilities(&client, &target_url).await?;
-    if let Some(vuln) = jwt_vuln {
-        vulnerabilities.push(vuln);
-    }
-
-    // Insecure file upload check
-    if verbose {
-        println!("Checking for file upload vulnerabilities...");
-    }
-    let file_upload = check_insecure_file_upload(&client, &target_url).await?;
-    if let Some(vuln) = file_upload {
-        vulnerabilities.push(vuln);
+                    match scan_single_target(&client, &http_url, verbose).await {
+                        Ok(vulnerabilities) => {
+                            all_vulnerabilities.extend(vulnerabilities);
+                        }
+                        Err(e) => {
+                            if verbose {
+                                println!("Error scanning {}: {}", http_url, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     if verbose {
         println!(
-            "Web scan completed. Found {} vulnerabilities.",
-            vulnerabilities.len()
+            "Web scan completed. Found {} vulnerabilities across all domains.",
+            all_vulnerabilities.len()
         );
-        for vuln in &vulnerabilities {
+        for vuln in &all_vulnerabilities {
             println!(
-                "- {} ({:?}): {}",
-                vuln.name, vuln.severity, vuln.description
+                "- {} ({:?}): {} - {}",
+                vuln.name, vuln.severity, vuln.location, vuln.description
             );
         }
     }
 
     // Save results if output path is provided
     if let Some(path) = output_path {
-        save_scan_results(&vulnerabilities, path)?;
+        save_scan_results(&all_vulnerabilities, path)?;
     }
 
     Ok(())
+}
+
+// Function to scan a single target (domain or subdomain)
+async fn scan_single_target(
+    client: &Client,
+    target_url: &str,
+    verbose: bool,
+) -> FortiCoreResult<Vec<Vulnerability>> {
+    let mut vulnerabilities = Vec::new();
+
+    // Basic information gathering
+    if verbose {
+        println!("Gathering basic information about: {}", target_url);
+    }
+
+    // Check for HTTP response headers
+    match check_headers(client, target_url).await {
+        Ok(Some(vuln)) => vulnerabilities.push(vuln),
+        Err(e) => {
+            if verbose {
+                println!("Error checking headers: {}", e);
+            }
+        }
+        _ => {}
+    }
+
+    // Check for robots.txt
+    if verbose {
+        println!("Checking for robots.txt on: {}", target_url);
+    }
+    match check_robots_txt(client, target_url).await {
+        Ok(Some(vuln)) => vulnerabilities.push(vuln),
+        Err(e) => {
+            if verbose {
+                println!("Error checking robots.txt: {}", e);
+            }
+        }
+        _ => {}
+    }
+
+    // Check for server version
+    if verbose {
+        println!("Checking for server version disclosure on: {}", target_url);
+    }
+    match check_server_version_disclosure(client, target_url).await {
+        Ok(Some(vuln)) => vulnerabilities.push(vuln),
+        Err(e) => {
+            if verbose {
+                println!("Error checking server version: {}", e);
+            }
+        }
+        _ => {}
+    }
+
+    // Check for common vulnerabilities
+    if verbose {
+        println!("Checking for common web vulnerabilities on: {}", target_url);
+    }
+
+    // CORS misconfiguration
+    match check_cors(client, target_url).await {
+        Ok(Some(vuln)) => vulnerabilities.push(vuln),
+        Err(e) => {
+            if verbose {
+                println!("Error checking CORS: {}", e);
+            }
+        }
+        _ => {}
+    }
+
+    // Check for insecure cookies
+    if verbose {
+        println!("Checking for insecure cookies on: {}", target_url);
+    }
+    match check_insecure_cookies(client, target_url).await {
+        Ok(Some(vuln)) => vulnerabilities.push(vuln),
+        Err(e) => {
+            if verbose {
+                println!("Error checking cookies: {}", e);
+            }
+        }
+        _ => {}
+    }
+
+    // XSS reflection test (enhanced)
+    if verbose {
+        println!("Checking for XSS vulnerabilities on: {}", target_url);
+    }
+    match check_xss_enhanced(client, target_url).await {
+        Ok(vulns) => vulnerabilities.extend(vulns),
+        Err(e) => {
+            if verbose {
+                println!("Error checking XSS: {}", e);
+            }
+        }
+    }
+
+    // SQL Injection test (enhanced)
+    if verbose {
+        println!(
+            "Checking for SQL injection vulnerabilities on: {}",
+            target_url
+        );
+    }
+    match check_sql_injection_enhanced(client, target_url).await {
+        Ok(Some(vuln)) => vulnerabilities.push(vuln),
+        Err(e) => {
+            if verbose {
+                println!("Error checking SQL injection: {}", e);
+            }
+        }
+        _ => {}
+    }
+
+    // Directory traversal test
+    if verbose {
+        println!(
+            "Checking for directory traversal vulnerabilities on: {}",
+            target_url
+        );
+    }
+    match check_directory_traversal(client, target_url).await {
+        Ok(Some(vuln)) => vulnerabilities.push(vuln),
+        Err(e) => {
+            if verbose {
+                println!("Error checking directory traversal: {}", e);
+            }
+        }
+        _ => {}
+    }
+
+    // Local file inclusion (LFI) test
+    if verbose {
+        println!(
+            "Checking for local file inclusion vulnerabilities on: {}",
+            target_url
+        );
+    }
+    match check_lfi(client, target_url).await {
+        Ok(Some(vuln)) => vulnerabilities.push(vuln),
+        Err(e) => {
+            if verbose {
+                println!("Error checking LFI: {}", e);
+            }
+        }
+        _ => {}
+    }
+
+    // Open redirect test
+    if verbose {
+        println!(
+            "Checking for open redirect vulnerabilities on: {}",
+            target_url
+        );
+    }
+    match check_open_redirect(client, target_url).await {
+        Ok(Some(vuln)) => vulnerabilities.push(vuln),
+        Err(e) => {
+            if verbose {
+                println!("Error checking open redirect: {}", e);
+            }
+        }
+        _ => {}
+    }
+
+    // JWT vulnerability check
+    if verbose {
+        println!("Checking for JWT token vulnerabilities on: {}", target_url);
+    }
+    match check_jwt_vulnerabilities(client, target_url).await {
+        Ok(Some(vuln)) => vulnerabilities.push(vuln),
+        Err(e) => {
+            if verbose {
+                println!("Error checking JWT: {}", e);
+            }
+        }
+        _ => {}
+    }
+
+    // Insecure file upload check
+    if verbose {
+        println!(
+            "Checking for file upload vulnerabilities on: {}",
+            target_url
+        );
+    }
+    match check_insecure_file_upload(client, target_url).await {
+        Ok(Some(vuln)) => vulnerabilities.push(vuln),
+        Err(e) => {
+            if verbose {
+                println!("Error checking file upload: {}", e);
+            }
+        }
+        _ => {}
+    }
+
+    if verbose {
+        println!(
+            "Scan of {} completed. Found {} vulnerabilities.",
+            target_url,
+            vulnerabilities.len()
+        );
+    }
+
+    Ok(vulnerabilities)
+}
+
+// Helper function to extract the domain from a URL
+fn extract_domain(url: &str) -> FortiCoreResult<String> {
+    let url_parts: Vec<&str> = url.split("://").collect();
+
+    let domain_with_path = if url_parts.len() > 1 {
+        url_parts[1]
+    } else {
+        url_parts[0]
+    };
+
+    let domain = domain_with_path
+        .split('/')
+        .next()
+        .unwrap_or(domain_with_path);
+
+    // Remove port if present
+    let domain_without_port = domain.split(':').next().unwrap_or(domain);
+
+    if domain_without_port.is_empty() {
+        return Err(FortiCoreError::InputError(
+            "Could not extract domain from URL".to_string(),
+        ));
+    }
+
+    Ok(domain_without_port.to_string())
+}
+
+// Function to enumerate subdomains of a given domain
+async fn enumerate_subdomains(
+    client: &Client,
+    domain: &str,
+    verbose: bool,
+) -> FortiCoreResult<HashSet<String>> {
+    let mut subdomains = HashSet::new();
+
+    // 1. Try a dictionary-based approach with common subdomains
+    let common_subdomains = [
+        "www",
+        "mail",
+        "ftp",
+        "webmail",
+        "login",
+        "admin",
+        "test",
+        "dev",
+        "api",
+        "secure",
+        "shop",
+        "beta",
+        "stage",
+        "blog",
+        "support",
+        "mobile",
+        "portal",
+        "forums",
+        "store",
+        "news",
+        "app",
+        "cdn",
+        "vpn",
+        "demo",
+        "m",
+        "docs",
+        "wiki",
+        "gateway",
+        "gateway",
+        "backup",
+        "status",
+        "help",
+        "services",
+        "images",
+        "media",
+        "videos",
+        "files",
+        "accounts",
+        "auth",
+        "dashboard",
+        "cp",
+        "cpanel",
+        "whm",
+        "webdisk",
+        "autodiscover",
+        "mx",
+        // Additional common subdomain prefixes
+        "intranet",
+        "internal",
+        "email",
+        "ns1",
+        "ns2",
+        "ns3",
+        "ns4",
+        "dns1",
+        "dns2",
+        "smtp",
+        "pop",
+        "pop3",
+        "imap",
+        "main",
+        "remote",
+        "extranet",
+        "exchange",
+        "web",
+        "web1",
+        "web2",
+        "server",
+        "server1",
+        "server2",
+        "fw",
+        "firewall",
+        "git",
+        "jenkins",
+        "jira",
+        "confluence",
+        "analytics",
+        "assets",
+        "static",
+        "prod",
+        "production",
+        "staging",
+        "testing",
+        "development",
+        "qa",
+        "uat",
+        "office",
+        "data",
+        "database",
+        "db",
+        "sql",
+        "mysql",
+        "postgres",
+        "oracle",
+        "ldap",
+        "active-directory",
+        "sso",
+        "vpn-gateway",
+        "cloud",
+        "aws",
+        "azure",
+    ];
+
+    // First add the main domain itself
+    subdomains.insert(domain.to_string());
+
+    // Create DNS resolver for additional subdomain discovery
+    let resolver = match Resolver::from_system_conf() {
+        Ok(r) => Some(r),
+        Err(e) => {
+            if verbose {
+                println!(
+                    "Failed to create DNS resolver from system config: {}. Trying default config.",
+                    e
+                );
+            }
+            match Resolver::new(ResolverConfig::default(), ResolverOpts::default()) {
+                Ok(r) => Some(r),
+                Err(e) => {
+                    if verbose {
+                        println!("Failed to create DNS resolver with default config: {}. DNS-based discovery will be limited.", e);
+                    }
+                    None
+                }
+            }
+        }
+    };
+
+    let total_subdomains = common_subdomains.len();
+    let mut checked = 0;
+
+    for subdomain in common_subdomains {
+        checked += 1;
+        if verbose && checked % 10 == 0 {
+            println!(
+                "Subdomain enumeration progress: {}/{}",
+                checked, total_subdomains
+            );
+        }
+
+        let full_subdomain = format!("{}.{}", subdomain, domain);
+
+        // Try DNS resolution first if resolver is available
+        let mut dns_resolved = false;
+
+        if let Some(ref resolver) = resolver {
+            match resolver.lookup_ip(&full_subdomain) {
+                Ok(response) => {
+                    if !response.iter().next().is_none() {
+                        // DNS resolution succeeded, subdomain exists
+                        subdomains.insert(full_subdomain.clone());
+                        dns_resolved = true;
+
+                        if verbose {
+                            println!("Found subdomain via DNS: {}", full_subdomain);
+                        }
+                    }
+                }
+                Err(_) => {
+                    // DNS resolution failed, subdomain might not exist
+                }
+            }
+        }
+
+        // If DNS resolution didn't find the subdomain, try HTTP requests
+        if !dns_resolved {
+            // Try HTTPS first
+            let https_url = format!("https://{}", full_subdomain);
+            match client
+                .get(&https_url)
+                .timeout(Duration::from_secs(5))
+                .send()
+                .await
+            {
+                Ok(_) => {
+                    subdomains.insert(full_subdomain.clone());
+                    if verbose {
+                        println!("Found subdomain via HTTPS: {}", full_subdomain);
+                    }
+                }
+                Err(_) => {
+                    // Try HTTP if HTTPS fails
+                    let http_url = format!("http://{}", full_subdomain);
+                    match client
+                        .get(&http_url)
+                        .timeout(Duration::from_secs(5))
+                        .send()
+                        .await
+                    {
+                        Ok(_) => {
+                            subdomains.insert(full_subdomain.clone());
+                            if verbose {
+                                println!("Found subdomain via HTTP: {}", full_subdomain);
+                            }
+                        }
+                        Err(_) => {
+                            // Subdomain doesn't exist or isn't responding
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sleep briefly to avoid overwhelming the server
+        sleep(Duration::from_millis(200)).await;
+    }
+
+    // 2. Try to discover subdomains from certificate transparency logs (simplified version)
+    if verbose {
+        println!("Querying certificate transparency logs for subdomains...");
+    }
+
+    let crt_sh_url = format!("https://crt.sh/?q={}&output=json", domain);
+    match client.get(&crt_sh_url).send().await {
+        Ok(response) => {
+            if let Ok(text) = response.text().await {
+                if let Ok(json_data) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if let Some(array) = json_data.as_array() {
+                        for entry in array {
+                            if let Some(name_value) = entry.get("name_value") {
+                                if let Some(name_str) = name_value.as_str() {
+                                    // Process wildcard domains
+                                    let name = name_str.replace("*.", "");
+
+                                    // Some entries contain multiple domains separated by newlines
+                                    for domain_entry in name.split('\n') {
+                                        let domain_entry = domain_entry.trim();
+                                        if domain_entry.ends_with(domain)
+                                            && !domain_entry.contains("*")
+                                        {
+                                            subdomains.insert(domain_entry.to_string());
+                                            if verbose {
+                                                println!(
+                                                    "Found subdomain from CT logs: {}",
+                                                    domain_entry
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            if verbose {
+                println!("Error querying certificate transparency logs: {}", e);
+            }
+        }
+    }
+
+    // 3. Try DNS zone transfer (simplified version)
+    if let Some(ref resolver) = resolver {
+        if verbose {
+            println!("Attempting DNS zone transfer for {}...", domain);
+        }
+
+        // First find name servers
+        match resolver.lookup_ip(&format!("ns1.{}", domain)) {
+            Ok(_) => {
+                // Attempt zone transfer - this is a very simplified approach
+                // In a real implementation, we would query SOA records to find authoritative name servers
+                // and then attempt an AXFR request to each one
+                if verbose {
+                    println!("Found name server ns1.{}, but zone transfer is not implemented in this version", domain);
+                }
+            }
+            Err(_) => {
+                if verbose {
+                    println!("No ns1 name server found for {}", domain);
+                }
+            }
+        }
+    }
+
+    // 4. Additional method: Brute force common patterns
+    // For example, if we found "api.example.com", try "api-v1.example.com", "api-v2.example.com", etc.
+    let extensions = [
+        "v1", "v2", "dev", "test", "stage", "prod", "qa", "uat", "beta", "old", "new",
+    ];
+    let mut additional_targets = Vec::new();
+
+    for subdomain in &subdomains {
+        if subdomain != domain {
+            // Skip the main domain
+            let base_name = subdomain
+                .strip_suffix(&format!(".{}", domain))
+                .unwrap_or(subdomain);
+            for ext in &extensions {
+                additional_targets.push(format!("{}-{}.{}", base_name, ext, domain));
+            }
+        }
+    }
+
+    // Check the additional targets
+    if verbose && !additional_targets.is_empty() {
+        println!(
+            "Checking {} additional pattern-based subdomains...",
+            additional_targets.len()
+        );
+    }
+
+    for target in additional_targets {
+        // Only try DNS resolution for these to speed things up
+        if let Some(ref resolver) = resolver {
+            match resolver.lookup_ip(&target) {
+                Ok(response) => {
+                    if !response.iter().next().is_none() {
+                        subdomains.insert(target.clone());
+                        if verbose {
+                            println!("Found additional subdomain: {}", target);
+                        }
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+    }
+
+    // Remove the main domain from the results
+    subdomains.remove(domain);
+
+    if verbose {
+        println!("Found {} subdomains for {}", subdomains.len(), domain);
+    }
+
+    Ok(subdomains)
 }
 
 fn normalize_url(url: &str) -> String {

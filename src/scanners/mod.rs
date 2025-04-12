@@ -38,12 +38,13 @@ pub async fn run_scan(
     scan_type: &ScanType,
     output_path: Option<&Path>,
     verbose: bool,
+    scan_subdomains: bool,
 ) -> FortiCoreResult<()> {
     match scan_type {
         ScanType::Basic => basic_scan(target, output_path, verbose).await,
         ScanType::Network => network_scanner::scan(target, output_path, verbose).await,
-        ScanType::Web => web_scanner::scan(target, output_path, verbose).await,
-        ScanType::Full => full_scan(target, output_path, verbose).await,
+        ScanType::Web => web_scanner::scan(target, output_path, verbose, scan_subdomains).await,
+        ScanType::Full => full_scan(target, output_path, verbose, scan_subdomains).await,
     }
 }
 
@@ -77,14 +78,19 @@ async fn basic_scan(
     Ok(())
 }
 
-async fn full_scan(target: &str, output_path: Option<&Path>, verbose: bool) -> FortiCoreResult<()> {
+async fn full_scan(
+    target: &str,
+    output_path: Option<&Path>,
+    verbose: bool,
+    scan_subdomains: bool,
+) -> FortiCoreResult<()> {
     if verbose {
         println!("Running full scan on {}", target);
     }
 
     // Run all scan types
     network_scanner::scan(target, None, verbose).await?;
-    web_scanner::scan(target, None, verbose).await?;
+    web_scanner::scan(target, None, verbose, scan_subdomains).await?;
 
     // Also run a more thorough port scan
     let ports = port_scanner::scan_common_ports(target).await?;
