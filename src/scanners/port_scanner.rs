@@ -9,7 +9,7 @@ use tokio::time::{timeout, Duration};
 const TIMEOUT_DURATION: Duration = Duration::from_secs(2);
 const COMMON_PORTS: &[u16] = &[
     20, 21, 22, 23, 25, 53, 80, 110, 115, 135, 139, 143, 194, 443, 445, 989, 990, 993, 995, 1433,
-    1521, 1723, 3306, 3389, 5060, 5432, 5900, 8080, 8443, 9090, 9100,
+    1521, 1723, 3306, 3389, 5060, 5432, 5900, 6543, 8080, 8443, 9090, 9099, 9100,
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
