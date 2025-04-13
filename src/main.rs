@@ -83,11 +83,12 @@ fn print_banner() {
     println!(
         "{}",
         r#"
-    ______          __  _  ______                
-   / ____/___  ____/ /_(_)/ ____/___  _________ 
-  / /_  / __ \/ __  / / / / /   / __ \/ ___/ __ \
- / __/ / /_/ / /_/ / / / / /___/ /_/ / /  / /_/ /
-/_/    \____/\__,_/_/_/  \____/\____/_/   \____/ 
+███████╗ ██████╗ ██████╗ ████████╗██╗ ██████╗ ██████╗ ██████╗ ███████╗
+██╔════╝██╔═══██╗██╔══██╗╚══██╔══╝██║██╔════╝██╔═══██╗██╔══██╗██╔════╝
+█████╗  ██║   ██║██████╔╝   ██║   ██║██║     ██║   ██║██████╔╝█████╗  
+██╔══╝  ██║   ██║██╔══██╗   ██║   ██║██║     ██║   ██║██╔══██╗██╔══╝  
+██║     ╚██████╔╝██║  ██║   ██║   ██║╚██████╗╚██████╔╝██║  ██║███████╗
+╚═╝      ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝
                                                  
     "#
         .bright_red()
@@ -99,14 +100,15 @@ fn print_banner() {
 
 // Add this function to create a default output path for scans
 fn create_default_output_path(target: &str, scan_type: &ScanType) -> Option<PathBuf> {
-    let scans_dir = PathBuf::from("/var/lib/forticore/scans");
+    // Create a 'scans' folder in the current directory where the program is run
+    let scans_dir = PathBuf::from("./scans");
 
-    // Try system path first
+    // Create directory if it doesn't exist
     if try_create_dir(&scans_dir) {
         return create_scan_file(&scans_dir, target, scan_type);
     }
 
-    // Fall back to user's home directory
+    // Fall back to user's home directory if local directory creation fails
     if let Some(home_dir) = dirs::home_dir() {
         let user_scans_dir = home_dir.join(".forticore").join("scans");
         if try_create_dir(&user_scans_dir) {
@@ -114,10 +116,10 @@ fn create_default_output_path(target: &str, scan_type: &ScanType) -> Option<Path
         }
     }
 
-    // Last resort - use current directory
-    let local_scans_dir = PathBuf::from("./scans");
-    if try_create_dir(&local_scans_dir) {
-        return create_scan_file(&local_scans_dir, target, scan_type);
+    // Last resort - try system directory
+    let system_scans_dir = PathBuf::from("/var/lib/forticore/scans");
+    if try_create_dir(&system_scans_dir) {
+        return create_scan_file(&system_scans_dir, target, scan_type);
     }
 
     None
@@ -146,6 +148,12 @@ async fn main() {
     env_logger::init();
     print_banner();
 
+    // Ensure scans directory exists
+    let scans_dir = PathBuf::from("./scans");
+    if let Err(e) = fs::create_dir_all(&scans_dir) {
+        eprintln!("Warning: Failed to create scans directory: {}", e);
+    }
+
     let cli = Cli::parse();
 
     if cli.verbose {
@@ -173,6 +181,17 @@ async fn main() {
                     println!(
                         "{} {}",
                         "No output file specified. Using default path:".bright_yellow(),
+                        default_path
+                            .as_ref()
+                            .unwrap()
+                            .display()
+                            .to_string()
+                            .bright_white()
+                    );
+                } else if default_path.is_some() {
+                    println!(
+                        "{} {}",
+                        "Scan results will be saved to:".bright_green(),
                         default_path
                             .as_ref()
                             .unwrap()

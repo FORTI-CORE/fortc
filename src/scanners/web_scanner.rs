@@ -409,7 +409,6 @@ async fn enumerate_subdomains(
         "webdisk",
         "autodiscover",
         "mx",
-        // Additional common subdomain prefixes
         "intranet",
         "internal",
         "email",
@@ -474,7 +473,7 @@ async fn enumerate_subdomains(
         Ok(r) => Some(r),
         Err(e) => {
             if verbose {
-                println!(
+            println!(
                     "Failed to create DNS resolver: {}. DNS-based discovery will be limited.",
                     e
                 );
@@ -1079,13 +1078,13 @@ async fn check_xss_enhanced(
             };
 
             // Just detect the form - we won't try to submit in the basic scan
-            let vuln = Vulnerability {
-                id: "WEB-004".to_string(),
-                name: "Potential XSS Vulnerability".to_string(),
-                description: "The page contains forms that could potentially be vulnerable to Cross-Site Scripting (XSS) attacks".to_string(),
-                severity: Severity::Medium,
+        let vuln = Vulnerability {
+            id: "WEB-004".to_string(),
+            name: "Potential XSS Vulnerability".to_string(),
+            description: "The page contains forms that could potentially be vulnerable to Cross-Site Scripting (XSS) attacks".to_string(),
+            severity: Severity::Medium,
                 location: action_url,
-                details: json!({
+            details: json!({
                     "form_action": form_url,
                     "note": "Forms often accept user input which could be vulnerable to XSS if not properly sanitized"
                 }),
@@ -1226,11 +1225,11 @@ async fn check_sql_injection_enhanced(
                             "error_detected": error,
                             "test_url": test_url,
                             "recommendation": "Use parameterized queries or prepared statements to prevent SQL injection"
-                        }),
-                        exploitable: true,
-                    };
+            }),
+            exploitable: true,
+        };
 
-                    return Ok(Some(vuln));
+        return Ok(Some(vuln));
                 }
             }
 
@@ -1338,9 +1337,9 @@ async fn check_directory_traversal(
         for pattern in &traversal_patterns {
             let test_url = format!("{}?{}={}", parts[0], param_name, pattern);
 
-            let resp = client.get(&test_url).send().await.map_err(|e| {
-                FortiCoreError::NetworkError(format!("Failed to connect to {}: {}", test_url, e))
-            })?;
+        let resp = client.get(&test_url).send().await.map_err(|e| {
+            FortiCoreError::NetworkError(format!("Failed to connect to {}: {}", test_url, e))
+        })?;
 
             let body = resp.text().await.map_err(|e| {
                 FortiCoreError::NetworkError(format!("Failed to read response: {}", e))
@@ -1464,26 +1463,26 @@ async fn check_lfi(client: &Client, base_url: &str) -> FortiCoreResult<Option<Vu
 
                 for indicator in &indicators {
                     if body.contains(indicator) {
-                        let vuln = Vulnerability {
+                let vuln = Vulnerability {
                             id: "WEB-010".to_string(),
                             name: "Local File Inclusion Vulnerability".to_string(),
-                            description: format!(
+                    description: format!(
                                 "The parameter '{}' is vulnerable to local file inclusion",
-                                param_name
-                            ),
-                            severity: Severity::High,
-                            location: base_url.to_string(),
-                            details: json!({
-                                "parameter": param_name,
+                        param_name
+                    ),
+                    severity: Severity::High,
+                    location: base_url.to_string(),
+                    details: json!({
+                        "parameter": param_name,
                                 "test_path": pattern,
-                                "test_url": test_url,
+                        "test_url": test_url,
                                 "indicator_found": indicator,
                                 "recommendation": "Validate and whitelist allowed files, avoid using user input for file paths"
-                            }),
-                            exploitable: true,
-                        };
+                    }),
+                    exploitable: true,
+                };
 
-                        return Ok(Some(vuln));
+                return Ok(Some(vuln));
                     }
                 }
 
