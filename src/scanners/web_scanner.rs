@@ -2418,7 +2418,7 @@ async fn detect_cms(client: &Client, url: &str) -> FortiCoreResult<Option<Vulner
             // Check for known vulnerabilities based on CMS and version
             if cms_version.is_some() {
                 detected_vulnerabilities =
-                    check_cms_vulnerabilities(fp.name, &cms_version.clone().unwrap_or_default());
+                    check_cms_vulnerabilities(fp.name, cms_version.as_ref().unwrap());
             }
 
             break;
@@ -2432,7 +2432,7 @@ async fn detect_cms(client: &Client, url: &str) -> FortiCoreResult<Option<Vulner
 
     // Populate details
     cms_details.insert("cms".to_string(), json!(cms_detected.unwrap()));
-    if let Some(version) = cms_version {
+    if let Some(ref version) = cms_version {
         cms_details.insert("version".to_string(), json!(version));
     } else {
         cms_details.insert("version".to_string(), json!("Unknown"));
