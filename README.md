@@ -11,6 +11,7 @@ FortiCore is an automated Penetration Testing Tool (PTT) designed to simplify pe
 - Enhanced DNS enumeration including zone transfer analysis
 - Dedicated vulnerability scanner for IP-based targets (similar to Metasploit)
 - JWT token security analysis
+- SSL/TLS configuration analysis for detecting weak ciphers and vulnerabilities
 - Safe exploitation of discovered vulnerabilities
 - Detailed report generation in PDF and TXT formats
 - Automatic scan results storage in local 'scans' directory
@@ -73,8 +74,11 @@ fortc scan -t https://example.com -s web -v
 # Web application scan with subdomain discovery
 fortc scan -t example.com -s web --scan-subdomains true
 
-# Vulnerability scan for IP-based targets
+# Vulnerability scan for IP-based targets (e.g., Metasploitable machines)
 fortc scan -t 192.168.1.100 -s vuln -v
+
+# SSL/TLS configuration analysis
+fortc scan -t example.com -s ssl -v
 
 # Full scan (all scan types)
 fortc scan -t example.com -s full -o scan-results.json
@@ -112,10 +116,25 @@ fortc interactive
 - **Scanner Modules**:
   - **Web Scanner**: Detects vulnerabilities in web applications, including XSS, SQL injection, insecure JWT implementations, and more
   - **Network Scanner**: Identifies open ports and vulnerable network services
-  - **Vulnerability Scanner**: Focused on detecting vulnerabilities in IP-based targets
+  - **Vulnerability Scanner**: Focused on detecting vulnerabilities in IP-based targets similar to Metasploit
+  - **SSL Scanner**: Analyzes SSL/TLS configurations to identify weak ciphers, protocols, and vulnerabilities (BEAST, POODLE, Heartbleed, etc.)
   - **Port Scanner**: Advanced port scanning with service detection
 - **Exploit Modules**: Safely exploit discovered vulnerabilities to demonstrate risk
 - **Report Modules**: Generate comprehensive reports with findings and remediation steps
+
+## SSL/TLS Security Testing
+
+The SSL scanner tests for:
+
+- Insecure protocol versions (SSL 2.0, SSL 3.0, TLS 1.0)
+- Weak cipher suites and encryption algorithms
+- Certificate issues (self-signed, expired, weak keys)
+- Known vulnerabilities such as:
+  - BEAST (Browser Exploit Against SSL/TLS)
+  - POODLE (Padding Oracle On Downgraded Legacy Encryption)
+  - Heartbleed (CVE-2014-0160)
+  - Logjam (Weak Diffie-Hellman parameters)
+  - FREAK (Factoring RSA Export Keys)
 
 ## Scan Results Storage
 
