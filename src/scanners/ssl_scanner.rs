@@ -847,8 +847,9 @@ async fn test_heartbleed_vulnerability(target: &str, port: u16, verbose: bool) -
     
     // Update extensions length
     let extensions_length = 5; // Length of our heartbeat extension
-    msg[msg.len() - extensions_length - 2] = ((extensions_length >> 8) & 0xFF) as u8;
-    msg[msg.len() - extensions_length - 1] = (extensions_length & 0xFF) as u8;
+    let msg_len = msg.len();
+    msg[msg_len - extensions_length - 2] = ((extensions_length >> 8) & 0xFF) as u8;
+    msg[msg_len - extensions_length - 1] = (extensions_length & 0xFF) as u8;
     
     // Update the message lengths
     let handshake_length = msg.len() - 9;
@@ -957,7 +958,7 @@ async fn test_tls_connection(target: &str, port: u16, version: TlsVersion) -> Fo
     // Create a TLS configuration based on the protocol version
     let mut client_config = rustls::ClientConfig::builder()
         .with_safe_defaults()
-        .with_root_certificates(load_root_certs()?)
+        .with_root_certificates(load_root_certs()?)?
         .with_no_client_auth();
     
     // Modify TLS parameters based on version
@@ -984,12 +985,12 @@ async fn test_tls_connection(target: &str, port: u16, version: TlsVersion) -> Fo
     };
     
     // Attempt to establish a TLS connection
-    let server_name = match rustls::ServerName::try_from(target) {
+    let server_name = match ServerName::try_from(target) {
         Ok(name) => name,
         Err(_) => {
             // If we can't parse the target as a valid DNS name (e.g., it's an IP),
             // use a dummy name
-            match rustls::ServerName::try_from("example.com") {
+            match ServerName::try_from("example.com") {
                 Ok(name) => name,
                 Err(_) => return Ok(false),
             }
@@ -1479,7 +1480,7 @@ async fn test_tls13_cipher(target: &str, port: u16, cipher_name: &str) -> FortiC
     // Create a TLS configuration for TLS 1.3
     let mut client_config = rustls::ClientConfig::builder()
         .with_safe_defaults()
-        .with_root_certificates(load_root_certs()?)
+        .with_root_certificates(load_root_certs()?)?
         .with_no_client_auth();
     
     // Set only the specific cipher suite to test
@@ -1496,12 +1497,12 @@ async fn test_tls13_cipher(target: &str, port: u16, cipher_name: &str) -> FortiC
         _ => return Ok(false), // Unsupported cipher
     }
     
-    let server_name = match rustls::ServerName::try_from(target) {
+    let server_name = match ServerName::try_from(target) {
         Ok(name) => name,
         Err(_) => {
             // If we can't parse the target as a valid DNS name (e.g., it's an IP),
             // use a dummy name
-            match rustls::ServerName::try_from("example.com") {
+            match ServerName::try_from("example.com") {
                 Ok(name) => name,
                 Err(_) => return Ok(false),
             }
@@ -1532,7 +1533,7 @@ async fn test_tls12_cipher(target: &str, port: u16, cipher_name: &str) -> FortiC
     // Create a TLS configuration for TLS 1.2
     let mut client_config = rustls::ClientConfig::builder()
         .with_safe_defaults()
-        .with_root_certificates(load_root_certs()?)
+        .with_root_certificates(load_root_certs()?)?
         .with_no_client_auth();
     
     // Make sure we only use TLS 1.2
@@ -1557,10 +1558,10 @@ async fn test_tls12_cipher(target: &str, port: u16, cipher_name: &str) -> FortiC
         _ => return Ok(false), // Unsupported cipher
     };
     
-    let server_name = match rustls::ServerName::try_from(target) {
+    let server_name = match ServerName::try_from(target) {
         Ok(name) => name,
         Err(_) => {
-            match rustls::ServerName::try_from("example.com") {
+            match ServerName::try_from("example.com") {
                 Ok(name) => name,
                 Err(_) => return Ok(false),
             }
@@ -1704,18 +1705,21 @@ fn create_client_hello_with_cipher(server_name: &str, cipher_id: u16) -> Vec<u8>
         
         // Update hostname length
         let hostname_len = hostname.len();
-        msg[msg.len() - hostname_len - 2] = ((hostname_len >> 8) & 0xFF) as u8;
-        msg[msg.len() - hostname_len - 1] = (hostname_len & 0xFF) as u8;
+        let msg_len = msg.len();
+        msg[msg_len - hostname_len - 2] = ((hostname_len >> 8) & 0xFF) as u8;
+        msg[msg_len - hostname_len - 1] = (hostname_len & 0xFF) as u8;
         
         // Update server name list length
         let list_len = hostname_len + 3; // type (1) + length (2) + hostname
-        msg[msg.len() - hostname_len - 5] = ((list_len >> 8) & 0xFF) as u8;
-        msg[msg.len() - hostname_len - 4] = (list_len & 0xFF) as u8;
+        let msg_len = msg.len();
+        msg[msg_len - hostname_len - 5] = ((list_len >> 8) & 0xFF) as u8;
+        msg[msg_len - hostname_len - 4] = (list_len & 0xFF) as u8;
         
         // Update SNI extension length
         let ext_len = list_len + 2; // list length (2) + list
-        msg[msg.len() - hostname_len - 7] = ((ext_len >> 8) & 0xFF) as u8;
-        msg[msg.len() - hostname_len - 6] = (ext_len & 0xFF) as u8;
+        let msg_len = msg.len();
+        msg[msg_len - hostname_len - 7] = ((ext_len >> 8) & 0xFF) as u8;
+        msg[msg_len - hostname_len - 6] = (ext_len & 0xFF) as u8;
     }
     
     // Update extensions length

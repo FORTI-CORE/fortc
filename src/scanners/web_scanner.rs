@@ -504,7 +504,7 @@ async fn enumerate_subdomains(
         if let Some(ref resolver) = resolver {
             match resolver.lookup_ip(full_subdomain.clone()).await {
                 Ok(response) => {
-                    if !response.iter().next().is_none() {
+                    if response.iter().next().is_some() {
                         // DNS resolution succeeded, subdomain exists
                         subdomains.insert(full_subdomain.clone());
                         dns_resolved = true;
