@@ -13,8 +13,6 @@ pub struct FortiCoreConfig {
     pub scans_dir: PathBuf,
     pub safe_mode: bool,
     pub max_threads: usize,
-    pub api_keys: std::collections::HashMap<String, String>,
-    pub scan_subdomains: bool,
 }
 
 impl Default for FortiCoreConfig {
@@ -27,8 +25,6 @@ impl Default for FortiCoreConfig {
             scans_dir: PathBuf::from("/var/lib/forticore/scans"),
             safe_mode: true,
             max_threads: 10,
-            api_keys: std::collections::HashMap::new(),
-            scan_subdomains: false,
         }
     }
 }
@@ -76,133 +72,6 @@ pub fn save_config(config: &FortiCoreConfig, path: &Path) -> FortiCoreResult<()>
 
     let mut file = File::create(path)?;
     file.write_all(json.as_bytes())?;
-
-    Ok(())
-}
-
-/// Show the current configuration
-pub fn show_config(verbose: bool) -> FortiCoreResult<()> {
-    use colored::*;
-
-    let config = load_config()?;
-
-    println!("{}", "=== FortiCore Configuration ===".bright_cyan());
-    println!("User Agent: {}", config.user_agent.bright_white());
-    println!(
-        "Timeout: {} seconds",
-        config.timeout.to_string().bright_white()
-    );
-    println!(
-        "Default Scan Type: {}",
-        config.default_scan_type.bright_white()
-    );
-    println!(
-        "Reports Directory: {}",
-        config.reports_dir.display().to_string().bright_white()
-    );
-    println!(
-        "Scans Directory: {}",
-        config.scans_dir.display().to_string().bright_white()
-    );
-    println!("Safe Mode: {}", config.safe_mode.to_string().bright_white());
-    println!(
-        "Max Threads: {}",
-        config.max_threads.to_string().bright_white()
-    );
-    println!(
-        "Subdomain Scanning: {}",
-        config.scan_subdomains.to_string().bright_white()
-    );
-
-    // Display API keys
-    if !config.api_keys.is_empty() {
-        println!("\n{}", "API Keys:".bright_yellow());
-        for (service, _) in &config.api_keys {
-            println!("  {}: {}", service.bright_white(), "[Set]".bright_green());
-        }
-    } else {
-        println!("\n{}", "API Keys: None configured".bright_yellow());
-    }
-
-    if verbose {
-        println!("\n{}", "Configuration Paths:".bright_yellow());
-        println!("  /etc/forticore/config.json");
-        println!("  ~/.config/forticore/config.json");
-        println!("  ./forticore.json");
-    }
-
-    Ok(())
-}
-
-/// Set an API key in the configuration
-pub fn set_api_key(service: &str, key: &str, verbose: bool) -> FortiCoreResult<()> {
-    use colored::*;
-    use std::collections::HashMap;
-
-    let config_path = PathBuf::from("./forticore.json");
-    let mut config = load_config()?;
-
-    // Update the API key in the config
-    config.api_keys.insert(service.to_string(), key.to_string());
-
-    // Save updated config
-    save_config(&config, &config_path)?;
-
-    if verbose {
-        println!(
-            "{} {} {}",
-            "API key for".bright_green(),
-            service.bright_white(),
-            "saved successfully".bright_green()
-        );
-    }
-
-    Ok(())
-}
-
-/// Set the default scan type
-pub fn set_default_scan_type(scan_type: &str, verbose: bool) -> FortiCoreResult<()> {
-    use colored::*;
-
-    let config_path = PathBuf::from("./forticore.json");
-    let mut config = load_config()?;
-
-    config.default_scan_type = scan_type.to_lowercase();
-
-    // Save updated config
-    save_config(&config, &config_path)?;
-
-    if verbose {
-        println!(
-            "{} {}",
-            "Default scan type set to:".bright_green(),
-            scan_type.bright_white()
-        );
-    }
-
-    Ok(())
-}
-
-/// Set the default subdomain scanning option
-pub fn set_default_subdomain_scanning(enabled: bool, verbose: bool) -> FortiCoreResult<()> {
-    use colored::*;
-
-    let config_path = PathBuf::from("./forticore.json");
-    let mut config = load_config()?;
-
-    // Update the subdomain scanning setting
-    config.scan_subdomains = enabled;
-
-    // Save updated config
-    save_config(&config, &config_path)?;
-
-    if verbose {
-        println!(
-            "{} {}",
-            "Default subdomain scanning set to:".bright_green(),
-            enabled.to_string().bright_white()
-        );
-    }
 
     Ok(())
 }
