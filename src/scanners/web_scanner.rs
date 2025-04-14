@@ -1,14 +1,16 @@
 use crate::scanners::{Severity, Vulnerability};
 use crate::utils::{error::FortiCoreResult, FortiCoreError};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::Client;
 use serde_json::json;
 use std::collections::HashSet;
 use std::path::Path;
+use std::str::FromStr;
 use std::time::Duration;
 use tokio::time::sleep;
-use trust_dns_resolver::TokioAsyncResolver;
+use tokio::time::timeout;
 
 pub async fn scan(
     target: &str,
@@ -724,8 +726,15 @@ async fn enumerate_subdomains(
         }
 
         // First, find authoritative name servers by querying NS records
-        let ns_record_name = trust_dns_resolver::Name::from_str(domain)
-            .map_err(|_| format!("Invalid domain name: {}", domain))?;
+        let ns_record_name = match trust_dns_resolver::Name::parse(domain, None) {
+            Ok(name) => name,
+            Err(_) => {
+                if verbose {
+                    println!("Invalid domain name: {}", domain);
+                }
+                return Ok(subdomains);
+            }
+        };
 
         // Query NS records to find authoritative name servers
         if let Ok(ns_response) = resolver
@@ -910,41 +919,46 @@ async fn enumerate_subdomains(
                 .await
             {
                 Ok(response) => {
-                    // Look for API indicators in the response
-                    if let Ok(text) = response.text().await {
-                        // Check if response looks like JSON
-                        if (text.starts_with("{") && text.ends_with("}"))
-                            || (text.starts_with("[") && text.ends_with("]"))
-                        {
-                            if verbose {
-                                println!("Found API endpoint (JSON response): {}", url);
-                            }
-                            return true;
-                        }
+                    let status = response.status();
+                    let is_success = status.is_success();
 
-                        // Check for API-related keywords in response
-                        if text.contains("\"api\"")
-                            || text.contains("\"endpoints\"")
-                            || text.contains("API")
-                            || text.contains("REST")
-                            || text.contains("GraphQL")
-                        {
-                            if verbose {
-                                println!("Found API endpoint (keyword match): {}", url);
+                    // Store status before consuming response with text()
+                    match response.text().await {
+                        Ok(text) => {
+                            // Check if response looks like JSON
+                            if (text.starts_with("{") && text.ends_with("}"))
+                                || (text.starts_with("[") && text.ends_with("]"))
+                            {
+                                if verbose {
+                                    println!("Found API endpoint (JSON response): {}", url);
+                                }
+                                return true;
                             }
-                            return true;
+
+                            // Check for API-related keywords in response
+                            if text.contains("\"api\"")
+                                || text.contains("\"endpoints\"")
+                                || text.contains("API")
+                                || text.contains("REST")
+                                || text.contains("GraphQL")
+                            {
+                                if verbose {
+                                    println!("Found API endpoint (keyword match): {}", url);
+                                }
+                                return true;
+                            }
                         }
-                    } else {
-                        // If we got a response but couldn't parse text, might still be valid
-                        if response.status().is_success() {
-                            if verbose {
-                                println!(
-                                    "Found potential API endpoint (status {}): {}",
-                                    response.status(),
-                                    url
-                                );
+                        Err(_) => {
+                            // If we got a response but couldn't parse text, might still be valid
+                            if is_success {
+                                if verbose {
+                                    println!(
+                                        "Found potential API endpoint (status {}): {}",
+                                        status, url
+                                    );
+                                }
+                                return true;
                             }
-                            return true;
                         }
                     }
                 }
@@ -2121,8 +2135,8 @@ fn decode_jwt_header(header_base64: &str) -> String {
     // Convert from base64url to base64 standard
     let standard_base64 = padded_header.replace('-', "+").replace('_', "/");
 
-    // Try to decode
-    match base64::decode(&standard_base64) {
+    // Try to decode using base64 crate
+    match STANDARD.decode(&standard_base64) {
         Ok(decoded_bytes) => {
             // Try to convert to string
             match String::from_utf8(decoded_bytes) {
