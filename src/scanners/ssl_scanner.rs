@@ -1,5 +1,5 @@
 use crate::scanners::{Severity, Vulnerability};
-use crate::utils::error::FortiCoreResult;
+use crate::utils::error::{FortiCoreResult, FortiCoreError};
 use serde_json::json;
 use std::path::Path;
 use std::net::TcpStream;
