@@ -62,7 +62,7 @@ async fn scan_port(target: IpAddr, port: u16) -> PortResult {
     }
 }
 
-fn resolve_target(target: &str) -> std::io::Result<IpAddr> {
+pub fn resolve_target(target: &str) -> std::io::Result<IpAddr> {
     // If target is already an IP address, parse it directly
     if let Ok(ip) = target.parse::<IpAddr>() {
         return Ok(ip);
