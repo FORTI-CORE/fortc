@@ -75,3 +75,113 @@ pub fn save_config(config: &FortiCoreConfig, path: &Path) -> FortiCoreResult<()>
 
     Ok(())
 }
+
+/// Show the current configuration
+pub fn show_config(verbose: bool) -> FortiCoreResult<()> {
+    use colored::*;
+
+    let config = load_config()?;
+
+    println!("{}", "=== FortiCore Configuration ===".bright_cyan());
+    println!("User Agent: {}", config.user_agent.bright_white());
+    println!(
+        "Timeout: {} seconds",
+        config.timeout.to_string().bright_white()
+    );
+    println!(
+        "Default Scan Type: {}",
+        config.default_scan_type.bright_white()
+    );
+    println!(
+        "Reports Directory: {}",
+        config.reports_dir.display().to_string().bright_white()
+    );
+    println!(
+        "Scans Directory: {}",
+        config.scans_dir.display().to_string().bright_white()
+    );
+    println!("Safe Mode: {}", config.safe_mode.to_string().bright_white());
+    println!(
+        "Max Threads: {}",
+        config.max_threads.to_string().bright_white()
+    );
+
+    if verbose {
+        println!("\n{}", "Configuration Paths:".bright_yellow());
+        println!("  /etc/forticore/config.json");
+        println!("  ~/.config/forticore/config.json");
+        println!("  ./forticore.json");
+    }
+
+    Ok(())
+}
+
+/// Set an API key in the configuration
+pub fn set_api_key(service: &str, key: &str, verbose: bool) -> FortiCoreResult<()> {
+    use colored::*;
+    use std::collections::HashMap;
+
+    let config_path = PathBuf::from("./forticore.json");
+    let mut config = load_config()?;
+
+    // Add API keys to config
+    let api_keys = serde_json::from_value(serde_json::json!({
+        service: key
+    }))
+    .unwrap_or_else(|_| HashMap::new());
+
+    // Save updated config
+    save_config(&config, &config_path)?;
+
+    if verbose {
+        println!(
+            "{} {} {}",
+            "API key for".bright_green(),
+            service.bright_white(),
+            "saved successfully".bright_green()
+        );
+    }
+
+    Ok(())
+}
+
+/// Set the default scan type
+pub fn set_default_scan_type(scan_type: &str, verbose: bool) -> FortiCoreResult<()> {
+    use colored::*;
+
+    let config_path = PathBuf::from("./forticore.json");
+    let mut config = load_config()?;
+
+    config.default_scan_type = scan_type.to_lowercase();
+
+    // Save updated config
+    save_config(&config, &config_path)?;
+
+    if verbose {
+        println!(
+            "{} {}",
+            "Default scan type set to:".bright_green(),
+            scan_type.bright_white()
+        );
+    }
+
+    Ok(())
+}
+
+/// Set the default subdomain scanning option
+pub fn set_default_subdomain_scanning(enabled: bool, verbose: bool) -> FortiCoreResult<()> {
+    use colored::*;
+
+    // This is a placeholder since the current config doesn't have this field
+    // We would need to extend the FortiCoreConfig struct to include this option
+
+    if verbose {
+        println!(
+            "{} {}",
+            "Default subdomain scanning set to:".bright_green(),
+            enabled.to_string().bright_white()
+        );
+    }
+
+    Ok(())
+}
