@@ -161,6 +161,20 @@ async fn scan_single_target(
         _ => {}
     }
 
+    // Check for CMS detection
+    if verbose {
+        println!("Detecting CMS platform on: {}", target_url);
+    }
+    match detect_cms(client, target_url).await {
+        Ok(Some(vuln)) => vulnerabilities.push(vuln),
+        Err(e) => {
+            if verbose {
+                println!("Error detecting CMS: {}", e);
+            }
+        }
+        _ => {}
+    }
+
     // Check for server version
     if verbose {
         println!("Checking for server version disclosure on: {}", target_url);
@@ -2198,4 +2212,362 @@ fn analyze_jwt_security(decoded_header: &str, jwt_parts: Vec<&str>) -> (bool, St
 
     // No vulnerabilities found
     (false, "".to_string())
+}
+
+/// Detects CMS platforms and their versions
+async fn detect_cms(client: &Client, url: &str) -> FortiCoreResult<Option<Vulnerability>> {
+    // Structured data about CMS fingerprints
+    let cms_fingerprints = [
+        // WordPress
+        CmsFingerprint {
+            name: "WordPress",
+            paths: &[
+                "/wp-login.php",
+                "/wp-admin/",
+                "/wp-content/",
+                "/wp-includes/",
+                "/wp-json/",
+            ],
+            content_patterns: &["wp-content", "wp_enqueue_script", "WordPress"],
+            meta_patterns: &["name=\"generator\" content=\"WordPress"],
+            version_patterns: &[
+                ("meta", r#"content="WordPress\s+([0-9.]+)"#),
+                ("readme", r"/readme\.html"),
+                ("feed", r"/feed/"),
+            ],
+            headers: &[],
+        },
+        // Joomla
+        CmsFingerprint {
+            name: "Joomla",
+            paths: &[
+                "/administrator/",
+                "/components/",
+                "/modules/",
+                "/templates/",
+                "/language/",
+            ],
+            content_patterns: &["joomla", "Joomla!", "com_content"],
+            meta_patterns: &["name=\"generator\" content=\"Joomla"],
+            version_patterns: &[
+                ("meta", r#"content="Joomla!\s+([0-9.]+)"#),
+                ("file", r"/administrator/manifests/files/joomla.xml"),
+            ],
+            headers: &[],
+        },
+        // Drupal
+        CmsFingerprint {
+            name: "Drupal",
+            paths: &[
+                "/sites/default/",
+                "/core/",
+                "/modules/",
+                "/themes/",
+                "/node/",
+            ],
+            content_patterns: &["Drupal.settings", "drupal-", "/sites/all/"],
+            meta_patterns: &["name=\"Generator\" content=\"Drupal"],
+            version_patterns: &[
+                ("meta", r#"content="Drupal\s+([0-9.]+)"#),
+                ("changelog", r"/CHANGELOG.txt"),
+            ],
+            headers: &["X-Drupal-Cache", "X-Generator"],
+        },
+        // Magento
+        CmsFingerprint {
+            name: "Magento",
+            paths: &["/skin/", "/media/", "/app/", "/js/mage/"],
+            content_patterns: &["Mage.Cookies", "Magento", "skin/frontend/"],
+            meta_patterns: &[],
+            version_patterns: &[
+                ("js", r"/js/varien/product.js"),
+                ("js", r"/js/varien/form.js"),
+            ],
+            headers: &["X-Magento-"],
+        },
+        // Shopify
+        CmsFingerprint {
+            name: "Shopify",
+            paths: &["/cdn/shop/", "/cart", "/collections/", "/products/"],
+            content_patterns: &["Shopify.theme", "cdn.shopify.com", "shopify-payment-button"],
+            meta_patterns: &["generator\" content=\"Shopify"],
+            version_patterns: &[],
+            headers: &["X-Shopid", "X-Shopify-Stage"],
+        },
+        // Ghost
+        CmsFingerprint {
+            name: "Ghost",
+            paths: &["/ghost/", "/assets/ghost"],
+            content_patterns: &["ghost-blog", "ghost-url", "content=\"Ghost"],
+            meta_patterns: &["name=\"generator\" content=\"Ghost"],
+            version_patterns: &[("meta", r#"content="Ghost\s+([0-9.]+)"#)],
+            headers: &[],
+        },
+        // TYPO3
+        CmsFingerprint {
+            name: "TYPO3",
+            paths: &["/typo3/", "/fileadmin/", "/uploads/"],
+            content_patterns: &["TYPO3", "typo3conf"],
+            meta_patterns: &["name=\"generator\" content=\"TYPO3"],
+            version_patterns: &[("meta", r#"content="TYPO3\s+([0-9.]+)"#)],
+            headers: &[],
+        },
+    ];
+
+    // Fetch the main page
+    let resp = client.get(url).send().await.map_err(|e| {
+        FortiCoreError::NetworkError(format!("Failed to connect to {}: {}", url, e))
+    })?;
+
+    // Get headers and HTML content
+    let headers = resp.headers().clone();
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| FortiCoreError::NetworkError(format!("Failed to read response: {}", e)))?;
+
+    // Create a regex for version extraction
+    let mut cms_detected = None;
+    let mut cms_version = None;
+    let mut cms_details = serde_json::Map::new();
+    let mut cms_paths_found = Vec::new();
+    let mut detected_vulnerabilities = Vec::new();
+
+    // Check for CMS fingerprints
+    for fp in &cms_fingerprints {
+        // 1. Check for characteristic paths
+        let mut path_found = false;
+        for path in fp.paths {
+            let path_url = format!("{}{}", url.trim_end_matches('/'), path);
+            match client.head(&path_url).send().await {
+                Ok(resp) => {
+                    if resp.status().is_success() || resp.status().as_u16() == 403 {
+                        path_found = true;
+                        cms_paths_found.push(path.to_string());
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+
+        // 2. Check for content patterns in HTML
+        let mut content_found = false;
+        for pattern in fp.content_patterns {
+            if html.contains(pattern) {
+                content_found = true;
+                break;
+            }
+        }
+
+        // 3. Check for meta patterns
+        let mut meta_found = false;
+        for pattern in fp.meta_patterns {
+            if html.contains(pattern) {
+                meta_found = true;
+                break;
+            }
+        }
+
+        // 4. Check for HTTP headers
+        let mut header_found = false;
+        for header_name in fp.headers {
+            if headers.contains_key(*header_name) {
+                header_found = true;
+                break;
+            }
+        }
+
+        // If at least two detection methods agree, we've found a CMS
+        let confidence_score = [path_found, content_found, meta_found, header_found]
+            .iter()
+            .filter(|&&x| x)
+            .count();
+
+        if confidence_score >= 2 {
+            cms_detected = Some(fp.name);
+
+            // Try to detect version
+            for (method, pattern) in fp.version_patterns {
+                match *method {
+                    "meta" => {
+                        if let Some(captures) =
+                            Regex::new(pattern).ok().and_then(|re| re.captures(&html))
+                        {
+                            if let Some(version) = captures.get(1) {
+                                cms_version = Some(version.as_str().to_string());
+                                break;
+                            }
+                        }
+                    }
+                    "readme" | "changelog" | "file" | "js" | "feed" => {
+                        // Try to fetch version from specific files
+                        let version_url = format!("{}{}", url.trim_end_matches('/'), pattern);
+                        if let Ok(version_resp) = client.get(&version_url).send().await {
+                            if version_resp.status().is_success() {
+                                cms_details
+                                    .insert("version_file_found".to_string(), json!(version_url));
+                                // For some files like CHANGELOG.txt, we could parse version from content
+                                // but we'll simplify and just note the file exists
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Check for known vulnerabilities based on CMS and version
+            if cms_version.is_some() {
+                detected_vulnerabilities =
+                    check_cms_vulnerabilities(fp.name, &cms_version.clone().unwrap_or_default());
+            }
+
+            break;
+        }
+    }
+
+    // If no CMS detected, return None
+    if cms_detected.is_none() {
+        return Ok(None);
+    }
+
+    // Populate details
+    cms_details.insert("cms".to_string(), json!(cms_detected.unwrap()));
+    if let Some(version) = cms_version {
+        cms_details.insert("version".to_string(), json!(version));
+    } else {
+        cms_details.insert("version".to_string(), json!("Unknown"));
+    }
+    cms_details.insert("paths_detected".to_string(), json!(cms_paths_found));
+
+    if !detected_vulnerabilities.is_empty() {
+        cms_details.insert(
+            "known_vulnerabilities".to_string(),
+            json!(detected_vulnerabilities),
+        );
+    }
+
+    // Create a vulnerability report
+    let cms_name = cms_detected.unwrap();
+    let version_info =
+        cms_version.map_or("Unknown version".to_string(), |v| format!("version {}", v));
+
+    let severity = if !detected_vulnerabilities.is_empty() {
+        Severity::High
+    } else {
+        Severity::Low
+    };
+
+    let vuln = Vulnerability {
+        id: "WEB-CMS-001".to_string(),
+        name: format!("{} CMS Detected", cms_name),
+        description: format!(
+            "{} {} detected on the target. {}",
+            cms_name,
+            version_info,
+            if !detected_vulnerabilities.is_empty() {
+                format!("Known vulnerabilities were identified.")
+            } else {
+                "No known vulnerabilities identified with this version.".to_string()
+            }
+        ),
+        severity,
+        location: url.to_string(),
+        details: json!(cms_details),
+        exploitable: !detected_vulnerabilities.is_empty(),
+    };
+
+    Ok(Some(vuln))
+}
+
+/// Structure to hold CMS fingerprint data
+struct CmsFingerprint<'a> {
+    name: &'a str,
+    paths: &'a [&'a str],
+    content_patterns: &'a [&'a str],
+    meta_patterns: &'a [&'a str],
+    version_patterns: &'a [(&'a str, &'a str)],
+    headers: &'a [&'a str],
+}
+
+/// Checks for known vulnerabilities in detected CMS versions
+fn check_cms_vulnerabilities(cms: &str, version: &str) -> Vec<String> {
+    let mut vulnerabilities = Vec::new();
+
+    // This would typically use a CVE database, but for demonstration we'll hardcode some examples
+    match cms {
+        "WordPress" => {
+            if version_lt(version, "5.8.3") {
+                vulnerabilities
+                    .push("CVE-2022-21661: SQL Injection vulnerability in WP_Query".to_string());
+            }
+            if version_lt(version, "5.8.0") {
+                vulnerabilities
+                    .push("CVE-2021-29447: Media file processing vulnerability".to_string());
+            }
+            if version_lt(version, "5.7.0") {
+                vulnerabilities.push(
+                    "CVE-2021-29450: Authenticated object injection vulnerability".to_string(),
+                );
+            }
+        }
+        "Joomla" => {
+            if version_lt(version, "3.9.26") {
+                vulnerabilities.push("CVE-2021-23132: Improper access control".to_string());
+            }
+            if version_lt(version, "3.9.0") {
+                vulnerabilities.push("CVE-2020-35616: Stored XSS vulnerability".to_string());
+            }
+        }
+        "Drupal" => {
+            if version_lt(version, "9.1.6") {
+                vulnerabilities
+                    .push("CVE-2021-25967: Moderately critical reflected XSS".to_string());
+            }
+            if version_lt(version, "8.9.0") {
+                vulnerabilities
+                    .push("CVE-2020-13666: Moderately critical arbitrary file uploads".to_string());
+            }
+            if version_lt(version, "7.70") {
+                vulnerabilities
+                    .push("CVE-2020-13663: Moderately critical access bypass".to_string());
+            }
+        }
+        "Magento" => {
+            if version_lt(version, "2.4.2") {
+                vulnerabilities.push("CVE-2021-21058: Improper session validation".to_string());
+            }
+            if version_lt(version, "2.3.5") {
+                vulnerabilities
+                    .push("CVE-2020-24407: Remote code execution vulnerability".to_string());
+            }
+        }
+        _ => {}
+    }
+
+    vulnerabilities
+}
+
+/// Compares version strings to check if v1 is less than v2
+fn version_lt(v1: &str, v2: &str) -> bool {
+    let v1_parts: Vec<u32> = v1
+        .split('.')
+        .map(|s| s.parse::<u32>().unwrap_or(0))
+        .collect();
+    let v2_parts: Vec<u32> = v2
+        .split('.')
+        .map(|s| s.parse::<u32>().unwrap_or(0))
+        .collect();
+
+    for i in 0..std::cmp::max(v1_parts.len(), v2_parts.len()) {
+        let v1_part = v1_parts.get(i).copied().unwrap_or(0);
+        let v2_part = v2_parts.get(i).copied().unwrap_or(0);
+
+        if v1_part < v2_part {
+            return true;
+        } else if v1_part > v2_part {
+            return false;
+        }
+    }
+
+    false // equal versions
 }
