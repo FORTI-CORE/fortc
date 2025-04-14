@@ -7,8 +7,13 @@ FortiCore is an automated Penetration Testing Tool (PTT) designed to simplify pe
 - User-friendly CLI interface for automated vulnerability scanning
 - Network vulnerability scanning (port scanning, service detection, etc.)
 - Web application scanning (XSS, SQL injection, etc.)
+- API endpoint discovery (both subdomain prefixes and path suffixes)
+- Enhanced DNS enumeration including zone transfer analysis
+- Dedicated vulnerability scanner for IP-based targets (similar to Metasploit)
+- JWT token security analysis
 - Safe exploitation of discovered vulnerabilities
 - Detailed report generation in PDF and TXT formats
+- Automatic scan results storage in local 'scans' directory
 
 ## Installation
 
@@ -65,6 +70,12 @@ fortc scan -t 192.168.1.1 -s network -o scan-results.json
 # Web application scan in verbose mode
 fortc scan -t https://example.com -s web -v
 
+# Web application scan with subdomain discovery
+fortc scan -t example.com -s web --scan-subdomains true
+
+# Vulnerability scan for IP-based targets
+fortc scan -t 192.168.1.100 -s vuln -v
+
 # Full scan (all scan types)
 fortc scan -t example.com -s full -o scan-results.json
 ```
@@ -98,9 +109,26 @@ fortc interactive
 
 ## Modules
 
-- **Scanner Modules**: Detect vulnerabilities in networks and web applications
+- **Scanner Modules**:
+  - **Web Scanner**: Detects vulnerabilities in web applications, including XSS, SQL injection, insecure JWT implementations, and more
+  - **Network Scanner**: Identifies open ports and vulnerable network services
+  - **Vulnerability Scanner**: Focused on detecting vulnerabilities in IP-based targets
+  - **Port Scanner**: Advanced port scanning with service detection
 - **Exploit Modules**: Safely exploit discovered vulnerabilities to demonstrate risk
 - **Report Modules**: Generate comprehensive reports with findings and remediation steps
+
+## Scan Results Storage
+
+By default, all scan results are automatically saved in the `./scans` directory in the current working directory. The filename format is:
+
+```
+<target>_<scan_type>_<timestamp>.json
+```
+
+If the local directory isn't writable, FortiCore will fall back to saving in:
+
+1. User's home directory at `~/.forticore/scans/`
+2. System directory at `/var/lib/forticore/scans/`
 
 ## Security Notice
 
