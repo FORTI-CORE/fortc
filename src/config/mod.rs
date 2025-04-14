@@ -13,6 +13,8 @@ pub struct FortiCoreConfig {
     pub scans_dir: PathBuf,
     pub safe_mode: bool,
     pub max_threads: usize,
+    pub api_keys: std::collections::HashMap<String, String>,
+    pub scan_subdomains: bool,
 }
 
 impl Default for FortiCoreConfig {
@@ -25,6 +27,8 @@ impl Default for FortiCoreConfig {
             scans_dir: PathBuf::from("/var/lib/forticore/scans"),
             safe_mode: true,
             max_threads: 10,
+            api_keys: std::collections::HashMap::new(),
+            scan_subdomains: false,
         }
     }
 }
@@ -105,6 +109,20 @@ pub fn show_config(verbose: bool) -> FortiCoreResult<()> {
         "Max Threads: {}",
         config.max_threads.to_string().bright_white()
     );
+    println!(
+        "Subdomain Scanning: {}",
+        config.scan_subdomains.to_string().bright_white()
+    );
+
+    // Display API keys
+    if !config.api_keys.is_empty() {
+        println!("\n{}", "API Keys:".bright_yellow());
+        for (service, _) in &config.api_keys {
+            println!("  {}: {}", service.bright_white(), "[Set]".bright_green());
+        }
+    } else {
+        println!("\n{}", "API Keys: None configured".bright_yellow());
+    }
 
     if verbose {
         println!("\n{}", "Configuration Paths:".bright_yellow());
@@ -124,11 +142,8 @@ pub fn set_api_key(service: &str, key: &str, verbose: bool) -> FortiCoreResult<(
     let config_path = PathBuf::from("./forticore.json");
     let mut config = load_config()?;
 
-    // Add API keys to config
-    let api_keys = serde_json::from_value(serde_json::json!({
-        service: key
-    }))
-    .unwrap_or_else(|_| HashMap::new());
+    // Update the API key in the config
+    config.api_keys.insert(service.to_string(), key.to_string());
 
     // Save updated config
     save_config(&config, &config_path)?;
@@ -172,8 +187,14 @@ pub fn set_default_scan_type(scan_type: &str, verbose: bool) -> FortiCoreResult<
 pub fn set_default_subdomain_scanning(enabled: bool, verbose: bool) -> FortiCoreResult<()> {
     use colored::*;
 
-    // This is a placeholder since the current config doesn't have this field
-    // We would need to extend the FortiCoreConfig struct to include this option
+    let config_path = PathBuf::from("./forticore.json");
+    let mut config = load_config()?;
+
+    // Update the subdomain scanning setting
+    config.scan_subdomains = enabled;
+
+    // Save updated config
+    save_config(&config, &config_path)?;
 
     if verbose {
         println!(
