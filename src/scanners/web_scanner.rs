@@ -748,7 +748,7 @@ async fn enumerate_subdomains(
 
             // Extract all name servers from the response
             for ns in ns_response.iter() {
-                if let Some(ns_name) = ns.as_name() {
+                if let Some(ns_name) = ns.as_aname() {
                     let ns_name_str = ns_name.to_string();
                     ns_servers.push(ns_name_str.trim_end_matches('.').to_string());
                     if verbose {
