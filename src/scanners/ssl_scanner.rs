@@ -14,6 +14,7 @@ use std::collections::HashMap;
 pub mod rustls {
     pub use rustls::*;
     pub mod pki_types {
+        #[derive(Clone)]
         pub enum ServerName {
             DnsName(String),
             IpAddress(std::net::IpAddr),
@@ -956,9 +957,11 @@ async fn test_tls_connection(target: &str, port: u16, version: TlsVersion) -> Fo
     let addr = format!("{}:{}", target, port);
     
     // Create a TLS configuration based on the protocol version
+    let root_certs = load_root_certs()?;
     let mut client_config = rustls::ClientConfig::builder()
         .with_safe_defaults()
-        .with_root_certificates(load_root_certs()?)?
+        .with_root_certificates(root_certs)
+        .map_err(|e| FortiCoreError::ScanError(format!("TLS config error: {}", e)))?
         .with_no_client_auth();
     
     // Modify TLS parameters based on version
@@ -1098,13 +1101,14 @@ fn load_root_certs() -> FortiCoreResult<rustls::RootCertStore> {
         Ok(certs) => {
             for cert in certs {
                 if let Ok(cert) = Certificate::from_der(&cert.0) {
-                    root_store.add(cert).ok(); // Ignore errors for individual certs
+                    // Ignore errors for individual certs
+                    let _ = root_store.add(cert);
                 }
             }
         },
         Err(_) => {
-            // If we can't load the system's root certs, we'll create an empty store
-            // This will likely cause certificate validation to fail
+            // If we can't load the system's root certs, just create an empty store
+            // This will likely cause certificate validation to fail, but we continue
         }
     }
     
@@ -1478,9 +1482,11 @@ async fn test_tls13_cipher(target: &str, port: u16, cipher_name: &str) -> FortiC
     let addr = format!("{}:{}", target, port);
     
     // Create a TLS configuration for TLS 1.3
+    let root_certs = load_root_certs()?;
     let mut client_config = rustls::ClientConfig::builder()
         .with_safe_defaults()
-        .with_root_certificates(load_root_certs()?)?
+        .with_root_certificates(root_certs)
+        .map_err(|e| FortiCoreError::ScanError(format!("TLS config error: {}", e)))?
         .with_no_client_auth();
     
     // Set only the specific cipher suite to test
@@ -1531,9 +1537,11 @@ async fn test_tls12_cipher(target: &str, port: u16, cipher_name: &str) -> FortiC
     let addr = format!("{}:{}", target, port);
     
     // Create a TLS configuration for TLS 1.2
+    let root_certs = load_root_certs()?;
     let mut client_config = rustls::ClientConfig::builder()
         .with_safe_defaults()
-        .with_root_certificates(load_root_certs()?)?
+        .with_root_certificates(root_certs)
+        .map_err(|e| FortiCoreError::ScanError(format!("TLS config error: {}", e)))?
         .with_no_client_auth();
     
     // Make sure we only use TLS 1.2
