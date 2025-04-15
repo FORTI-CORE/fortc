@@ -77,6 +77,7 @@ enum ScanType {
     Network,
     Web,
     Vuln,
+    SSL,
     Full,
 }
 

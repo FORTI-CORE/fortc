@@ -1,5 +1,6 @@
 mod network_scanner;
 mod port_scanner;
+mod ssl_scanner;
 mod vuln_scanner;
 mod web_scanner;
 
@@ -46,6 +47,7 @@ pub async fn run_scan(
         ScanType::Network => network_scanner::scan(target, output_path, verbose).await,
         ScanType::Web => web_scanner::scan(target, output_path, verbose, scan_subdomains).await,
         ScanType::Vuln => vuln_scanner::scan(target, output_path, verbose).await,
+        ScanType::SSL => ssl_scanner::scan(target, output_path, verbose).await,
         ScanType::Full => full_scan(target, output_path, verbose, scan_subdomains).await,
     }
 }
@@ -94,6 +96,7 @@ async fn full_scan(
     network_scanner::scan(target, None, verbose).await?;
     web_scanner::scan(target, None, verbose, scan_subdomains).await?;
     vuln_scanner::scan(target, None, verbose).await?;
+    ssl_scanner::scan(target, None, verbose).await?;
 
     // Also run a more thorough port scan
     let ports = port_scanner::scan_common_ports(target).await?;

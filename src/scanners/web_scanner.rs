@@ -518,7 +518,7 @@ async fn enumerate_subdomains(
         if let Some(ref resolver) = resolver {
             match resolver.lookup_ip(full_subdomain.clone()).await {
                 Ok(response) => {
-                    if !response.iter().next().is_none() {
+                    if response.iter().next().is_some() {
                         // DNS resolution succeeded, subdomain exists
                         subdomains.insert(full_subdomain.clone());
                         dns_resolved = true;
@@ -1556,11 +1556,11 @@ async fn check_sql_injection_enhanced(
                         severity: Severity::High,
                         location: base_url.to_string(),
                         details: json!({
-                                        "parameter": param_name,
-                                        "payload": payload,
-                                        "error_detected": error,
-                                        "test_url": test_url,
-                                        "recommendation": "Use parameterized queries or prepared statements to prevent SQL injection"
+                                                                "parameter": param_name,
+                                                                "payload": payload,
+                                                                "error_detected": error,
+                                                                "test_url": test_url,
+                                                                "recommendation": "Use parameterized queries or prepared statements to prevent SQL injection"
                         }),
                         exploitable: true,
                     };
@@ -1810,10 +1810,10 @@ async fn check_lfi(client: &Client, base_url: &str) -> FortiCoreResult<Option<Vu
                             location: base_url.to_string(),
                             details: json!({
                                 "parameter": param_name,
-                                        "test_path": pattern,
+                                                        "test_path": pattern,
                                 "test_url": test_url,
-                                        "indicator_found": indicator,
-                                        "recommendation": "Validate and whitelist allowed files, avoid using user input for file paths"
+                                                        "indicator_found": indicator,
+                                                        "recommendation": "Validate and whitelist allowed files, avoid using user input for file paths"
                             }),
                             exploitable: true,
                         };
