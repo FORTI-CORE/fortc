@@ -109,7 +109,7 @@ pub mod rustls {
     pub struct ClientConfigBuilder;
     
     impl ClientConfigBuilder {
-        pub fn with_root_certificates(self, root_store: RootCertStore) -> Result<ClientConfigBuilderWithRoots, &'static str> {
+        pub fn with_root_certificates(self, _root_store: RootCertStore) -> Result<ClientConfigBuilderWithRoots, &'static str> {
             Ok(ClientConfigBuilderWithRoots {})
         }
     }
@@ -1116,7 +1116,7 @@ fn load_root_certs() -> FortiCoreResult<rustls::RootCertStore> {
 }
 
 /// Create a TLS 1.0 Client Hello message
-fn create_tls_1_0_client_hello(server_name: &str) -> Vec<u8> {
+fn create_tls_1_0_client_hello(_server_name: &str) -> Vec<u8> {
     // This is a simplified TLS 1.0 Client Hello message with minimal configuration
     let mut msg = Vec::new();
     
@@ -1166,7 +1166,7 @@ fn create_tls_1_0_client_hello(server_name: &str) -> Vec<u8> {
 }
 
 /// Create a TLS 1.1 Client Hello message
-fn create_tls_1_1_client_hello(server_name: &str) -> Vec<u8> {
+fn create_tls_1_1_client_hello(_server_name: &str) -> Vec<u8> {
     // This is a simplified TLS 1.1 Client Hello message with minimal configuration
     let mut msg = Vec::new();
     
