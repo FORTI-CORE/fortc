@@ -56,6 +56,10 @@ enum Commands {
         /// Safe mode (non-destructive exploits only)
         #[arg(short, long, default_value = "true")]
         safe_mode: bool,
+
+        /// Path to scan results file (optional, otherwise will try to find or create)
+        #[arg(short, long)]
+        scan_file: Option<PathBuf>,
     },
     /// Generate a report from scan results
     Report {
@@ -234,6 +238,7 @@ async fn main() {
             target,
             vuln_id,
             safe_mode,
+            scan_file,
         }) => {
             println!(
                 "{} {}",
@@ -253,7 +258,15 @@ async fn main() {
                 safe_mode.to_string().bright_white()
             );
 
-            match exploits::run_exploit(target, vuln_id.as_deref(), *safe_mode, cli.verbose).await {
+            match exploits::run_exploit(
+                target,
+                vuln_id.as_deref(),
+                *safe_mode,
+                cli.verbose,
+                scan_file.as_deref(),
+            )
+            .await
+            {
                 Ok(_) => println!("{}", "Exploitation completed".bright_green()),
                 Err(e) => {
                     eprintln!("{} {}", "Error during exploitation:".bright_red(), e);
