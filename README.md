@@ -26,8 +26,10 @@ FortiCore is an automated Penetration Testing Tool (PTT) designed to simplify pe
 
 ### Automatic Installation
 
+Run as root in the fortc directory 
+
 ```bash
-sudo ./install.sh
+source "/root/.cargo/env" && bash install.sh
 ```
 
 ### Manual Installation
