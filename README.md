@@ -26,7 +26,7 @@ FortiCore is an automated Penetration Testing Tool (PTT) designed to simplify pe
 
 ### Automatic Installation
 
-Run as root in the fortc directory 
+Run as root in the fortc directory
 
 ```bash
 source "/root/.cargo/env" && bash install.sh
@@ -97,6 +97,12 @@ fortc exploit -t 192.168.1.1 --safe-mode true
 
 # Specify a custom scan results file
 fortc exploit -t example.com --scan-file path/to/custom-scan-results.json
+
+# Save exploitation results to a file
+fortc exploit -t example.com -o exploit-results.json
+
+# Generate a PDF report of exploitation results
+fortc exploit -t example.com -o exploit-results.json --generate-report
 ```
 
 ### Report Generation
@@ -107,6 +113,9 @@ fortc report -i scan-results.json -o security-report.pdf
 
 # Generate a text report
 fortc report -i scan-results.json -o security-report.txt
+
+# Generate a report from exploitation results
+fortc report -i exploit-results.json -o exploit-report.pdf
 ```
 
 ### Interactive Mode (Coming Soon)

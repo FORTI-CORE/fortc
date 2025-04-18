@@ -54,6 +54,49 @@ pub fn generate_pdf_report(
         count_by_severity[index] += 1;
     }
 
+    // Count exploited vulnerabilities
+    let exploited_success_count = vulnerabilities
+        .iter()
+        .filter(|v| {
+            if let Some(obj) = v.details.as_object() {
+                if let Some(status) = obj.get("exploitation_status") {
+                    if let Some(status_str) = status.as_str() {
+                        return status_str == "Success";
+                    }
+                }
+            }
+            false
+        })
+        .count();
+
+    let exploited_partial_count = vulnerabilities
+        .iter()
+        .filter(|v| {
+            if let Some(obj) = v.details.as_object() {
+                if let Some(status) = obj.get("exploitation_status") {
+                    if let Some(status_str) = status.as_str() {
+                        return status_str == "Partial";
+                    }
+                }
+            }
+            false
+        })
+        .count();
+
+    let exploited_failed_count = vulnerabilities
+        .iter()
+        .filter(|v| {
+            if let Some(obj) = v.details.as_object() {
+                if let Some(status) = obj.get("exploitation_status") {
+                    if let Some(status_str) = status.as_str() {
+                        return status_str == "Failed";
+                    }
+                }
+            }
+            false
+        })
+        .count();
+
     // Generate a sorted list of vulnerabilities by severity
     let mut sorted_vulns: Vec<&Vulnerability> = vulnerabilities.iter().collect();
     sorted_vulns.sort_by(|a, b| b.severity.cmp(&a.severity));
@@ -99,6 +142,29 @@ pub fn generate_pdf_report(
     content.extend_from_slice(b"0 -15 Td\n");
     content.extend_from_slice(format!("(Info: {}) Tj\n", count_by_severity[0]).as_bytes());
 
+    // Exploitation summary if any vulnerabilities were exploited
+    if exploited_success_count > 0 || exploited_partial_count > 0 || exploited_failed_count > 0 {
+        content.extend_from_slice(b"0 -25 Td\n");
+        content.extend_from_slice(b"/F1 14 Tf\n");
+        content.extend_from_slice(b"(EXPLOITATION SUMMARY) Tj\n");
+
+        content.extend_from_slice(b"/F1 12 Tf\n");
+        content.extend_from_slice(b"10 -20 Td\n");
+        content.extend_from_slice(
+            format!("(Successfully Exploited: {}) Tj\n", exploited_success_count).as_bytes(),
+        );
+
+        content.extend_from_slice(b"0 -15 Td\n");
+        content.extend_from_slice(
+            format!("(Partially Exploited: {}) Tj\n", exploited_partial_count).as_bytes(),
+        );
+
+        content.extend_from_slice(b"0 -15 Td\n");
+        content.extend_from_slice(
+            format!("(Failed Exploitation: {}) Tj\n", exploited_failed_count).as_bytes(),
+        );
+    }
+
     // Top findings section
     content.extend_from_slice(b"0 -30 Td\n");
     content.extend_from_slice(b"/F1 14 Tf\n");
@@ -132,6 +198,24 @@ pub fn generate_pdf_report(
         content.extend_from_slice(
             format!("(Description: {}) Tj\n", escape_pdf_string(&desc)).as_bytes(),
         );
+
+        // Add exploitation status if available
+        let exploitation_status = if let Some(obj) = vuln.details.as_object() {
+            if let Some(status) = obj.get("exploitation_status").and_then(|s| s.as_str()) {
+                Some(status)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(status) = exploitation_status {
+            content.extend_from_slice(b"0 -15 Td\n");
+            content.extend_from_slice(
+                format!("(Exploitation Status: {}) Tj\n", escape_pdf_string(status)).as_bytes(),
+            );
+        }
     }
 
     // Disclaimer
@@ -160,63 +244,35 @@ pub fn generate_pdf_report(
     // End text block
     content.extend_from_slice(b"ET\n");
 
-    // Compress the content (in a real implementation)
-    // For simplicity, we'll just use the raw content
-
-    // Write the content stream object
-    output.extend_from_slice(b"5 0 obj\n");
-    output.extend_from_slice(b"<< /Length ");
-    output.extend_from_slice(content.len().to_string().as_bytes());
-    output.extend_from_slice(b" >>\nstream\n");
+    // End and length of content stream
+    let content_stream = format!("5 0 obj\n<< /Length {} >>\nstream\n", content.len());
+    output.extend_from_slice(content_stream.as_bytes());
     output.extend_from_slice(&content);
-    output.extend_from_slice(b"\nendstream\nendobj\n\n");
+    output.extend_from_slice(b"endstream\nendobj\n\n");
 
-    // Cross-reference table
+    // Xref
     let xref_pos = output.len();
-    output.extend_from_slice(b"xref\n");
-    output.extend_from_slice(b"0 6\n");
+    output.extend_from_slice(b"xref\n0 6\n");
     output.extend_from_slice(b"0000000000 65535 f \n");
 
-    // Find positions of objects for xref table
-    // Safely find positions without unwrapping
-    let mut object_positions = vec![0; 5];
-
-    // Find position of object 1
-    if let Some(pos) = find_object_position(&output, 1) {
-        object_positions[0] = pos;
-    }
-
-    // Find position of object 2
-    if let Some(pos) = find_object_position(&output, 2) {
-        object_positions[1] = pos;
-    }
-
-    // Find position of object 3
-    if let Some(pos) = find_object_position(&output, 3) {
-        object_positions[2] = pos;
-    }
-
-    // Find position of object 4
-    if let Some(pos) = find_object_position(&output, 4) {
-        object_positions[3] = pos;
-    }
-
-    // Find position of object 5
-    if let Some(pos) = find_object_position(&output, 5) {
-        object_positions[4] = pos;
-    }
-
-    // Write xref entries
-    for pos in object_positions {
-        output.extend_from_slice(format!("{:010} 00000 n \n", pos).as_bytes());
+    // Find positions of each object and add to xref
+    for i in 1..=5 {
+        if let Some(pos) = find_object_position(&output, i) {
+            output.extend_from_slice(format!("{:010} 00000 n \n", pos).as_bytes());
+        } else {
+            // This should not happen with our simple structure
+            output.extend_from_slice(format!("0000000000 00000 n \n").as_bytes());
+        }
     }
 
     // Trailer
-    output.extend_from_slice(b"trailer\n");
-    output.extend_from_slice(b"<< /Size 6 /Root 1 0 R >>\n");
-    output.extend_from_slice(b"startxref\n");
-    output.extend_from_slice(xref_pos.to_string().as_bytes());
-    output.extend_from_slice(b"\n%%EOF\n");
+    output.extend_from_slice(
+        format!(
+            "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{}\n%%EOF",
+            xref_pos
+        )
+        .as_bytes(),
+    );
 
     // Write to file
     let mut file = File::create(output_path).map_err(|e| FortiCoreError::IoError(e))?;

@@ -1,5 +1,6 @@
 mod pdf_generator;
 
+use crate::exploits::ExploitResult;
 use crate::scanners::{Severity, Vulnerability};
 use crate::utils::{error::FortiCoreResult, FortiCoreError};
 use chrono::Local;
@@ -78,6 +79,16 @@ fn read_vulnerabilities(path: &Path) -> FortiCoreResult<Vec<Vulnerability>> {
         return Ok(wrapper.vulnerabilities);
     }
 
+    // Try parsing as exploit results
+    let result: Result<serde_json::Value, _> = serde_json::from_str(&contents);
+    if let Ok(json_value) = result {
+        // Check if this is an exploit result file
+        if let Some(results) = json_value.get("results").and_then(|r| r.as_array()) {
+            let vulns = convert_exploit_results_to_vulnerabilities(results)?;
+            return Ok(vulns);
+        }
+    }
+
     // If that didn't work either, try a more flexible approach
     let json_value: serde_json::Value =
         serde_json::from_str(&contents).map_err(|e| FortiCoreError::SerializationError(e))?;
@@ -91,6 +102,96 @@ fn read_vulnerabilities(path: &Path) -> FortiCoreResult<Vec<Vulnerability>> {
 
     // Return empty result if we couldn't parse any vulnerabilities
     Ok(Vec::new())
+}
+
+// Convert exploit results to vulnerabilities for reporting
+fn convert_exploit_results_to_vulnerabilities(
+    exploit_results: &[serde_json::Value],
+) -> FortiCoreResult<Vec<Vulnerability>> {
+    let mut vulnerabilities = Vec::new();
+
+    for result in exploit_results {
+        // Skip if not a valid structure
+        if !result.is_object() {
+            continue;
+        }
+
+        // Extract vulnerability based on result type
+        if let Some(success) = result.get("Success") {
+            if let Some(vuln) = success.get("vulnerability") {
+                let vuln: Vulnerability = serde_json::from_value(vuln.clone())?;
+
+                // Include exploitation details
+                let mut vuln_with_details = vuln.clone();
+                if let Some(details) = success.get("details") {
+                    vuln_with_details.details = details.clone();
+                    // Add exploitation status
+                    if vuln_with_details.details.is_object() {
+                        let mut details_obj =
+                            vuln_with_details.details.as_object().unwrap().clone();
+                        details_obj.insert(
+                            "exploitation_status".to_string(),
+                            serde_json::Value::String("Success".to_string()),
+                        );
+                        vuln_with_details.details = serde_json::Value::Object(details_obj);
+                    }
+                }
+
+                vulnerabilities.push(vuln_with_details);
+            }
+        } else if let Some(partial) = result.get("Partial") {
+            if let Some(vuln) = partial.get("vulnerability") {
+                let vuln: Vulnerability = serde_json::from_value(vuln.clone())?;
+
+                // Include exploitation details
+                let mut vuln_with_details = vuln.clone();
+                if let Some(details) = partial.get("details") {
+                    vuln_with_details.details = details.clone();
+                    // Add exploitation status and reason
+                    if vuln_with_details.details.is_object() {
+                        let mut details_obj =
+                            vuln_with_details.details.as_object().unwrap().clone();
+                        details_obj.insert(
+                            "exploitation_status".to_string(),
+                            serde_json::Value::String("Partial".to_string()),
+                        );
+                        if let Some(reason) = partial.get("reason") {
+                            details_obj.insert("reason".to_string(), reason.clone());
+                        }
+                        vuln_with_details.details = serde_json::Value::Object(details_obj);
+                    }
+                }
+
+                vulnerabilities.push(vuln_with_details);
+            }
+        } else if let Some(failed) = result.get("Failed") {
+            if let Some(vuln) = failed.get("vulnerability") {
+                let vuln: Vulnerability = serde_json::from_value(vuln.clone())?;
+
+                // Include exploitation details
+                let mut vuln_with_details = vuln.clone();
+                // Add exploitation status and reason
+                let mut details_obj = if vuln_with_details.details.is_object() {
+                    vuln_with_details.details.as_object().unwrap().clone()
+                } else {
+                    serde_json::Map::new()
+                };
+
+                details_obj.insert(
+                    "exploitation_status".to_string(),
+                    serde_json::Value::String("Failed".to_string()),
+                );
+                if let Some(reason) = failed.get("reason") {
+                    details_obj.insert("reason".to_string(), reason.clone());
+                }
+                vuln_with_details.details = serde_json::Value::Object(details_obj);
+
+                vulnerabilities.push(vuln_with_details);
+            }
+        }
+    }
+
+    Ok(vulnerabilities)
 }
 
 fn generate_text_report(
@@ -145,6 +246,61 @@ fn generate_text_report(
     writeln!(file, "Info: {}", by_severity[0].len())?;
     writeln!(file)?;
 
+    // Check if we have exploitation data
+    let has_exploit_data = vulnerabilities.iter().any(|v| {
+        if let Some(obj) = v.details.as_object() {
+            obj.contains_key("exploitation_status")
+        } else {
+            false
+        }
+    });
+
+    // Exploitation summary if available
+    if has_exploit_data {
+        let successful = vulnerabilities
+            .iter()
+            .filter(|v| {
+                if let Some(obj) = v.details.as_object() {
+                    if let Some(status) = obj.get("exploitation_status").and_then(|s| s.as_str()) {
+                        return status == "Success";
+                    }
+                }
+                false
+            })
+            .count();
+
+        let partial = vulnerabilities
+            .iter()
+            .filter(|v| {
+                if let Some(obj) = v.details.as_object() {
+                    if let Some(status) = obj.get("exploitation_status").and_then(|s| s.as_str()) {
+                        return status == "Partial";
+                    }
+                }
+                false
+            })
+            .count();
+
+        let failed = vulnerabilities
+            .iter()
+            .filter(|v| {
+                if let Some(obj) = v.details.as_object() {
+                    if let Some(status) = obj.get("exploitation_status").and_then(|s| s.as_str()) {
+                        return status == "Failed";
+                    }
+                }
+                false
+            })
+            .count();
+
+        writeln!(file, "EXPLOITATION SUMMARY")?;
+        writeln!(file, "====================")?;
+        writeln!(file, "Successfully Exploited: {}", successful)?;
+        writeln!(file, "Partially Exploited: {}", partial)?;
+        writeln!(file, "Failed Exploitation: {}", failed)?;
+        writeln!(file)?;
+    }
+
     // Detailed findings
     writeln!(file, "DETAILED FINDINGS")?;
     writeln!(file, "=================")?;
@@ -174,12 +330,29 @@ fn generate_text_report(
                     if vuln.exploitable { "Yes" } else { "No" }
                 )?;
 
+                // Add exploitation status if available
+                if let Some(obj) = vuln.details.as_object() {
+                    if let Some(status) = obj.get("exploitation_status").and_then(|s| s.as_str()) {
+                        writeln!(file, "   Exploitation Status: {}", status)?;
+
+                        // If there's a reason for failure or partial success, include it
+                        if let Some(reason) = obj.get("reason").and_then(|r| r.as_str()) {
+                            writeln!(file, "   Exploitation Result: {}", reason)?;
+                        }
+                    }
+                }
+
                 // Add details if available
                 if !vuln.details.is_null() {
                     writeln!(file, "   Details:")?;
 
                     if let Some(obj) = vuln.details.as_object() {
                         for (key, value) in obj {
+                            // Skip these keys as they're already displayed separately
+                            if key == "exploitation_status" || key == "reason" {
+                                continue;
+                            }
+
                             let value_str = match value {
                                 serde_json::Value::String(s) => s.clone(),
                                 _ => value.to_string(),
