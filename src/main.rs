@@ -56,6 +56,18 @@ enum Commands {
         /// Safe mode (non-destructive exploits only)
         #[arg(short, long, default_value = "true")]
         safe_mode: bool,
+
+        /// Path to scan results file (optional, otherwise will try to find or create)
+        #[arg(short, long)]
+        scan_file: Option<PathBuf>,
+
+        /// Output file for exploitation results
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Generate report after exploitation completes
+        #[arg(long)]
+        generate_report: bool,
     },
     /// Generate a report from scan results
     Report {
@@ -234,6 +246,9 @@ async fn main() {
             target,
             vuln_id,
             safe_mode,
+            scan_file,
+            output,
+            generate_report,
         }) => {
             println!(
                 "{} {}",
@@ -253,8 +268,42 @@ async fn main() {
                 safe_mode.to_string().bright_white()
             );
 
-            match exploits::run_exploit(target, vuln_id.as_deref(), *safe_mode, cli.verbose).await {
-                Ok(_) => println!("{}", "Exploitation completed".bright_green()),
+            match exploits::run_exploit(
+                target,
+                vuln_id.as_deref(),
+                *safe_mode,
+                cli.verbose,
+                scan_file.as_deref(),
+                output.as_deref(),
+            )
+            .await
+            {
+                Ok(_) => {
+                    println!("{}", "Exploitation completed".bright_green());
+
+                    // Generate report if requested and we have an output file
+                    if *generate_report && output.is_some() {
+                        let output_path = output.as_ref().unwrap();
+                        let report_filename =
+                            format!("{}.pdf", output_path.file_stem().unwrap().to_str().unwrap());
+                        let report_path = output_path.with_file_name(report_filename);
+
+                        println!(
+                            "{} {} to {}",
+                            "Generating report from:".bright_yellow(),
+                            output_path.display().to_string().bright_white(),
+                            report_path.display().to_string().bright_white()
+                        );
+
+                        match report::generate_report(output_path, &report_path, cli.verbose) {
+                            Ok(_) => println!("{}", "Report generated successfully".bright_green()),
+                            Err(e) => {
+                                eprintln!("{} {}", "Error generating report:".bright_red(), e);
+                                process::exit(1);
+                            }
+                        }
+                    }
+                }
                 Err(e) => {
                     eprintln!("{} {}", "Error during exploitation:".bright_red(), e);
                     process::exit(1);
