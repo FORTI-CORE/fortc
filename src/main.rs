@@ -8,6 +8,7 @@ use std::process;
 mod config;
 mod exploits;
 mod report;
+mod resources;
 mod scanners;
 mod utils;
 
@@ -162,10 +163,23 @@ async fn main() {
     env_logger::init();
     print_banner();
 
+    // Ensure all required resources exist
+    if let Err(e) = resources::ensure_resources_exist() {
+        eprintln!(
+            "{} {}",
+            "Warning: Failed to ensure resources: ".bright_yellow(),
+            e
+        );
+    }
+
     // Ensure scans directory exists
     let scans_dir = PathBuf::from("./scans");
     if let Err(e) = fs::create_dir_all(&scans_dir) {
-        eprintln!("Warning: Failed to create scans directory: {}", e);
+        eprintln!(
+            "{} {}",
+            "Warning: Failed to create scans directory: ".bright_yellow(),
+            e
+        );
     }
 
     let cli = Cli::parse();

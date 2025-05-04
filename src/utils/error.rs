@@ -27,6 +27,9 @@ pub enum FortiCoreError {
     #[error("Invalid header value: {0}")]
     InvalidHeaderValue(String),
 
+    #[error("Resource error: {0}")]
+    ResourceError(String),
+
     #[error("IO error: {0}")]
     IoError(#[from] io::Error),
 
