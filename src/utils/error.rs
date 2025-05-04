@@ -21,6 +21,12 @@ pub enum FortiCoreError {
     #[error("Input error: {0}")]
     InputError(String),
 
+    #[error("Invalid URL: {0}")]
+    InvalidUrl(String),
+
+    #[error("Invalid header value: {0}")]
+    InvalidHeaderValue(String),
+
     #[error("IO error: {0}")]
     IoError(#[from] io::Error),
 
@@ -35,3 +41,9 @@ pub enum FortiCoreError {
 }
 
 pub type FortiCoreResult<T> = Result<T, FortiCoreError>;
+
+impl From<reqwest::header::InvalidHeaderValue> for FortiCoreError {
+    fn from(err: reqwest::header::InvalidHeaderValue) -> Self {
+        FortiCoreError::InvalidHeaderValue(err.to_string())
+    }
+}
