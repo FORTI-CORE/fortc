@@ -1,6 +1,12 @@
 # FortiCore
 
+[![Release](https://img.shields.io/github/v/release/FORTI-CORE/fortc?style=flat-square)](https://github.com/FORTI-CORE/fortc/releases)
+[![Downloads](https://img.shields.io/github/downloads/FORTI-CORE/fortc/total?style=flat-square)](https://github.com/FORTI-CORE/fortc/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
+
 FortiCore is an automated Penetration Testing Tool (PTT) designed to simplify penetration testing processes.
+
+**[📥 Download Latest Release](https://github.com/FORTI-CORE/fortc/releases/latest)**
 
 ## Features
 
@@ -39,9 +45,24 @@ docker-compose run forticore scan -t example.com -s web
 
 See the [Docker Usage](#docker-usage) section below for more details.
 
-### Option 2: Debian Package
+### Option 2: Debian Package (Pre-built)
 
-Install from a pre-built `.deb` package:
+Download and install the latest release:
+
+```bash
+# Download the latest release
+wget https://github.com/FORTI-CORE/fortc/releases/latest/download/forticore_0.1.0-1_amd64.deb
+
+# Install the package
+sudo dpkg -i forticore_0.1.0-1_amd64.deb
+
+# If there are missing dependencies, run:
+sudo apt-get install -f
+```
+
+Or download directly from the [Releases page](https://github.com/FORTI-CORE/fortc/releases).
+
+#### Build Your Own Debian Package
 
 ```bash
 # Install cargo-deb if not already installed
