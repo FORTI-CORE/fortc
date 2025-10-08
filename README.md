@@ -18,21 +18,59 @@ FortiCore is an automated Penetration Testing Tool (PTT) designed to simplify pe
 
 ## Installation
 
-### Prerequisites
+### Option 1: Docker (Recommended)
+
+The easiest way to run FortiCore is using Docker:
+
+```bash
+# Build the Docker image
+docker build -t forticore:latest .
+
+# Or use the helper script
+chmod +x docker-run.sh
+./docker-run.sh build
+
+# Run a scan
+./docker-run.sh scan -t example.com -s web -v
+
+# Or use docker-compose
+docker-compose run forticore scan -t example.com -s web
+```
+
+See the [Docker Usage](#docker-usage) section below for more details.
+
+### Option 2: Debian Package
+
+Install from a pre-built `.deb` package:
+
+```bash
+# Install cargo-deb if not already installed
+cargo install cargo-deb
+
+# Build the package
+cargo deb
+
+# Install the package
+sudo dpkg -i target/debian/forticore_*.deb
+```
+
+### Option 3: From Source
+
+#### Prerequisites
 
 - Rust and Cargo (1.70.0 or newer)
 - OpenSSL development libraries
 - Linux-based system (Ubuntu/Debian/CentOS/RHEL)
 
-### Automatic Installation
+#### Automatic Installation
 
-Run as root in the fortc directory
+Run as root in the fortc directory:
 
 ```bash
 source "/root/.cargo/env" && bash install.sh
 ```
 
-### Manual Installation
+#### Manual Installation
 
 1. Install dependencies:
 
@@ -240,6 +278,130 @@ If the local directory isn't writable, FortiCore will fall back to saving in:
 
 1. User's home directory at `~/.forticore/scans/`
 2. System directory at `/var/lib/forticore/scans/`
+
+## Docker Usage
+
+FortiCore is fully containerized for easy deployment and isolation.
+
+### Building the Docker Image
+
+```bash
+# Build using Docker directly
+docker build -t forticore:latest .
+
+# Or use the helper script
+chmod +x docker-run.sh
+./docker-run.sh build
+```
+
+### Running Scans with Docker
+
+#### Using the Helper Script (Recommended)
+
+```bash
+# Web application scan
+./docker-run.sh scan -t example.com -s web -v
+
+# Network scan
+./docker-run.sh scan -t 192.168.1.0/24 -s network
+
+# Full scan with subdomain discovery
+./docker-run.sh scan -t example.com -s full --scan-subdomains
+
+# SSL/TLS analysis
+./docker-run.sh scan -t example.com -s ssl -v
+```
+
+#### Using Docker Directly
+
+```bash
+# Create scans directory
+mkdir -p ./scans
+
+# Run a scan
+docker run --rm \
+  --network host \
+  --cap-add=NET_RAW \
+  --cap-add=NET_ADMIN \
+  -v "$(pwd)/scans:/home/fortc/scans" \
+  forticore:latest scan -t example.com -s web -v
+```
+
+#### Using Docker Compose
+
+```bash
+# Run with docker-compose
+docker-compose run forticore scan -t example.com -s web
+
+# Run in isolated network mode
+docker-compose --profile isolated run forticore-isolated scan -t example.com -s web
+```
+
+### Running Exploits with Docker
+
+```bash
+# Using helper script
+./docker-run.sh exploit -t example.com --safe-mode true
+
+# Using Docker directly
+docker run --rm \
+  --network host \
+  --cap-add=NET_RAW \
+  --cap-add=NET_ADMIN \
+  -v "$(pwd)/scans:/home/fortc/scans" \
+  forticore:latest exploit -t example.com --safe-mode true
+```
+
+### Generating Reports with Docker
+
+```bash
+# Using helper script
+./docker-run.sh report scans/example_com_Web_20251008.json reports/report.pdf
+
+# Using Docker directly
+docker run --rm \
+  -v "$(pwd)/scans:/home/fortc/scans" \
+  -v "$(pwd)/reports:/home/fortc/reports" \
+  forticore:latest report -i scans/scan.json -o reports/report.pdf
+```
+
+### Interactive Shell
+
+```bash
+# Start an interactive shell in the container
+./docker-run.sh shell
+
+# Or with Docker directly
+docker run --rm -it \
+  --network host \
+  --cap-add=NET_RAW \
+  --cap-add=NET_ADMIN \
+  -v "$(pwd)/scans:/home/fortc/scans" \
+  --entrypoint /bin/bash \
+  forticore:latest
+```
+
+### Docker Security Considerations
+
+FortiCore requires elevated network capabilities for scanning operations:
+
+- **NET_RAW**: Required for raw socket operations (port scanning, packet crafting)
+- **NET_ADMIN**: Required for network interface manipulation
+- **--network host**: Provides direct access to the host's network stack
+
+**Important**: Only use these capabilities in authorized testing environments. The container runs as a non-root user (`fortc`) for additional security.
+
+### Persistent Storage
+
+Scan results are stored in mounted volumes:
+
+```bash
+# Results are saved to ./scans on the host
+ls -la ./scans/
+
+# Reports are saved to ./reports on the host
+ls -la ./reports/
+```
 
 ## Security Notice
 

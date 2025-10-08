@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  forticore:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: forticore:latest
+    container_name: forticore
+    
+    # Network mode: host allows direct network access for scanning
+    # Use with caution - only in controlled environments
+    network_mode: host
+    
+    # Mount volumes for persistent scan results
+    volumes:
+      - ./scans:/home/fortc/scans
+      - ./reports:/home/fortc/reports
+    
+    # Environment variables
+    environment:
+      - RUST_LOG=info
+    
+    # Security options
+    cap_add:
+      - NET_RAW        # Required for raw socket operations
+      - NET_ADMIN      # Required for network scanning
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Override default command (example)
+    # Uncomment and modify as needed
+    # command: scan -t example.com -s web -v
+
+  # Alternative service for isolated network scanning
+  forticore-isolated:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: forticore:latest
+    container_name: forticore-isolated
+    
+    # Use bridge network for isolated scanning
+    networks:
+      - fortinet
+    
+    volumes:
+      - ./scans:/home/fortc/scans
+      - ./reports:/home/fortc/reports
+    
+    environment:
+      - RUST_LOG=info
+    
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    
+    # This service won't start automatically
+    profiles:
+      - isolated
+
+networks:
+  fortinet:
+    driver: bridge

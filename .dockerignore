@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Build artifacts
+target/
+*.deb
+*.buildinfo
+*.changes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+!README.md
+
+# CI/CD
+.github/
+
+# Debian packaging (not needed for Docker)
+debian/
+
+# Scripts
+*.sh
+!install.sh
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
