@@ -1,0 +1,36 @@
+# Rust build artifacts
+target/
+Cargo.lock
+
+# Debian packages and build artifacts
+*.deb
+*.buildinfo
+*.changes
+debian/.debhelper/
+debian/files
+debian/forticore/
+debian/*.log
+debian/*.substvars
+debian/tmp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Scan results (optional - uncomment if you don't want to commit test scans)
+# scans/
+# reports/
